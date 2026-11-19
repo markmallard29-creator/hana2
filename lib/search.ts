@@ -1,5 +1,6 @@
 import "server-only";
 import { config, searchProviderName } from "./config";
+import type { SearchEngine } from "./types";
 
 /**
  * Search provider interface. Tavily is the default; swap in Exa (or anything
@@ -136,3 +137,7 @@ export const exaProvider: SearchProvider = {
 
 /** Which search engine to use: SEARCH_PROVIDER, else whichever key is set (Tavily first). */
 export const searchProvider: SearchProvider = searchProviderName === "exa" ? exaProvider : tavilyProvider;
+
+export function providerFor(engine: SearchEngine | null): SearchProvider {
+  return engine === "exa" ? exaProvider : engine === "tavily" ? tavilyProvider : searchProvider;
+}

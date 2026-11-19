@@ -1,4 +1,5 @@
 import "server-only";
+import type { SearchEngine, SearchOptions } from "./types";
 
 const env = (k: string) => (process.env[k] ?? "").trim();
 
@@ -51,7 +52,23 @@ export const searchProviderName: "tavily" | "exa" | null =
           ? "exa"
           : null;
 
+/** Use the engine this newsletter asked for if its key is set, else the server default. */
+export function resolveSearch(want?: string | null): SearchEngine | null {
+  if (want === "exa" && config.exaKey) return "exa";
+  if (want === "tavily" && config.tavilyKey) return "tavily";
+  return searchProviderName;
+}
+
 /** Demo mode for research/writing: no search key or no AI key, so use sample data. */
 export const demoResearch = !searchProviderName || !llmProvider;
 /** Demo mode for sending: no Resend key, so log instead of sending. */
 export const demoSend = !config.resendKey;
+
+export function searchOptions(): SearchOptions {
+  if (demoResearch) return { available: { tavily: true, exa: true }, default: searchProviderName ?? "tavily", demo: true };
+  return {
+    available: { tavily: !!config.tavilyKey, exa: !!config.exaKey },
+    default: searchProviderName ?? "tavily",
+    demo: false,
+  };
+}

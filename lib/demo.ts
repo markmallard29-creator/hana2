@@ -60,6 +60,7 @@ export async function demoResearch(s: Settings, excludeUrls: string[] = [], want
       content: `Demo article ${i + 1} about ${topic}.`,
       status: "pending" as const,
       whyPicked: `${kind}, ${words}+ words`,
+      via: s.search ?? "tavily",
     };
   });
 }

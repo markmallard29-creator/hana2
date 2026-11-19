@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Stepper } from "../Stepper";
 import { Notice, api, apiStream } from "../ui";
 import { Footer, type NextBtn } from "./Footer";
-import { DEFAULT_SETTINGS, type Article, type Draft, type Settings } from "@/lib/types";
+import { DEFAULT_SETTINGS, type Article, type Draft, type SearchOptions, type Settings } from "@/lib/types";
 import { StepTopic } from "./StepTopic";
 import { StepArticles } from "./StepArticles";
 import { StepCustomise } from "./StepCustomise";
@@ -12,9 +12,9 @@ import { StepPreview } from "./StepPreview";
 import { StepSend } from "./StepSend";
 import { StepDone } from "./StepDone";
 
-export function emptyDraft(): Draft {
+export function emptyDraft(search?: SearchOptions): Draft {
   return {
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...DEFAULT_SETTINGS, search: search?.default },
     articles: [],
     title: "",
     intro: "",
@@ -26,11 +26,16 @@ export function emptyDraft(): Draft {
   };
 }
 
-const researchKey = (s: Settings) => JSON.stringify([s.topic.trim(), s.numArticles, s.daysBack, s.customUrls.trim()]);
+const researchKey = (s: Settings) => JSON.stringify([s.topic.trim(), s.numArticles, s.daysBack, s.customUrls.trim(), s.search ?? ""]);
 const SUMMARY_CONCURRENCY = 3;
 
-export function Wizard({ initial, testEmail }: { initial: Draft | null; testEmail: string }) {
-  const [draft, setDraft] = useState<Draft>(initial ?? emptyDraft());
+export function Wizard({ initial, testEmail, search }: { initial: Draft | null; testEmail: string; search?: SearchOptions }) {
+  const [draft, setDraft] = useState<Draft>(() => {
+    const d = initial ?? emptyDraft(search);
+    // Older drafts (or an engine whose key was removed) fall back to the server default.
+    const engine = d.settings.search && search?.available[d.settings.search] ? d.settings.search : search?.default;
+    return { ...d, settings: { ...d.settings, search: engine } };
+  });
   const [step, setStep] = useState(1);
   const [maxReached, setMaxReached] = useState(initial?.articles.length ? 5 : 1);
   const [phase, setPhase] = useState<string | null>(null); // progress label on step 2
@@ -107,7 +112,7 @@ export function Wizard({ initial, testEmail }: { initial: Draft | null; testEmai
           if (typeof o.progress === "string") setPhase(o.progress);
         }),
         ...urls.map((url) =>
-          api<{ article: Article }>("/api/article", { url }).then(
+          api<{ article: Article }>("/api/article", { url, search: s.search }).then(
             (r) => r.article,
             (e: Error) => ({ error: `${url}: ${e.message}` }),
           ),
@@ -137,7 +142,7 @@ export function Wizard({ initial, testEmail }: { initial: Draft | null; testEmai
     async (opts: { url?: string; more?: number }) => {
       const d = draftRef.current;
       if (opts.url) {
-        const { article } = await api<{ article: Article }>("/api/article", { url: opts.url });
+        const { article } = await api<{ article: Article }>("/api/article", { url: opts.url, search: d.settings.search });
         setArticles((as) => [...as, article]);
       } else {
         const { articles } = await apiStream<{ articles: Article[] }>(
@@ -201,7 +206,9 @@ export function Wizard({ initial, testEmail }: { initial: Draft | null; testEmai
             <Notice tone={step === 2 && a.length ? "warn" : "error"}>{error}</Notice>
           </div>
         )}
-        {step === 1 && <StepTopic settings={draft.settings} onChange={(s) => update({ settings: { ...draft.settings, ...s } })} />}
+        {step === 1 && (
+          <StepTopic settings={draft.settings} search={search} onChange={(s) => update({ settings: { ...draft.settings, ...s } })} />
+        )}
         {step === 2 && (
           <StepArticles
             articles={a}

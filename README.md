@@ -77,7 +77,7 @@ Tables are created automatically on first request, so there are no migrations to
 
 ## Tavily or Exa
 
-Set either `TAVILY_API_KEY` or `EXA_API_KEY`. If both are set, Tavily is used unless `SEARCH_PROVIDER=exa`.
+Set `TAVILY_API_KEY`, `EXA_API_KEY`, or both. With both, step 1 has a **Research engine** switch per newsletter; `SEARCH_PROVIDER` (tavily or exa) sets which one new newsletters start on. Each article card says which engine found it.
 
 - **Tavily:** keyword-style search, strongest on this week's news. 2 credits per search, 5 searches per edition.
 - **Exa:** meaning-based search, better at features, analysis and long reads. When Exa is active, HANA phrases its searches as descriptions of the ideal article. Exa also returns each article's lead image, used when a publisher blocks HANA from reading the page.

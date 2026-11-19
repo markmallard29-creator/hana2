@@ -2,12 +2,20 @@
 
 import { Wand2 } from "lucide-react";
 import { useState } from "react";
-import { TONES, type Settings, type Tone } from "@/lib/types";
+import { SEARCH_ENGINES, TONES, type SearchOptions, type Settings, type Tone } from "@/lib/types";
 import { Input, Label, Select, Slider, Textarea, api, cx } from "../ui";
 
 const PRESETS = ["AI News", "Cybersecurity", "Stem cell research"];
 
-export function StepTopic({ settings: s, onChange }: { settings: Settings; onChange: (s: Partial<Settings>) => void }) {
+export function StepTopic({
+  settings: s,
+  search,
+  onChange,
+}: {
+  settings: Settings;
+  search?: SearchOptions;
+  onChange: (s: Partial<Settings>) => void;
+}) {
   const [refining, setRefining] = useState(false);
   const [refineErr, setRefineErr] = useState<string | null>(null);
 
@@ -66,6 +74,48 @@ export function StepTopic({ settings: s, onChange }: { settings: Settings; onCha
         </div>
         {refineErr && <p className="mt-2 text-sm text-red-700">{refineErr}</p>}
       </div>
+
+      {search && (
+        <div>
+          <Label>Research engine</Label>
+          <div role="radiogroup" aria-label="Research engine" className="grid gap-3 sm:grid-cols-2">
+            {SEARCH_ENGINES.map((e) => {
+              const available = search.available[e.id];
+              const selected = (s.search ?? search.default) === e.id;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={!available}
+                  onClick={() => onChange({ search: e.id })}
+                  className={cx(
+                    "flex items-start gap-3 rounded-md border px-4 py-3 text-left transition-colors",
+                    selected ? "border-brand bg-brand-light/60 ring-1 ring-brand" : "border-gray-200 hover:border-gray-300",
+                    !available && "cursor-not-allowed opacity-50 hover:border-gray-200",
+                  )}
+                >
+                  <span
+                    className={cx(
+                      "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+                      selected ? "border-brand" : "border-gray-300",
+                    )}
+                  >
+                    {selected && <span className="h-2 w-2 rounded-full bg-brand" />}
+                  </span>
+                  <span>
+                    <span className="block text-[17px] font-medium">{e.name}</span>
+                    <span className="block text-sm text-gray-500">
+                      {available ? e.blurb : `Add ${e.id === "exa" ? "EXA_API_KEY" : "TAVILY_API_KEY"} in Render to enable`}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div>
         <Label htmlFor="num">Number of Articles</Label>

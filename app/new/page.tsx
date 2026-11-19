@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { config } from "@/lib/config";
+import { config, searchOptions } from "@/lib/config";
 import { getNewsletter } from "@/lib/db";
 import { Wizard } from "@/components/wizard/Wizard";
 import type { Draft } from "@/lib/types";
@@ -20,5 +20,5 @@ export default async function NewNewsletter({ searchParams }: { searchParams: Pr
       articles: n.draft.articles.map((a) => (a.status === "ready" ? a : { ...a, status: "error" as const })),
     };
   }
-  return <Wizard key={id ?? "new"} initial={initial} testEmail={config.testEmail} />;
+  return <Wizard key={id ?? "new"} initial={initial} testEmail={config.testEmail} search={searchOptions()} />;
 }

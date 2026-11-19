@@ -251,7 +251,13 @@ function ArticleCard({
             <a href={a.url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-[17px] text-brand hover:underline">
               Read more at {a.source} ({a.readMins} min{a.readMins === 1 ? "" : "s"})
             </a>
-            {a.whyPicked && <p className="mt-2 text-xs text-gray-400">Picked for: {a.whyPicked}</p>}
+            {(a.whyPicked || a.via) && (
+              <p className="mt-2 text-xs text-gray-400">
+                {a.via && <>Found by {a.via === "exa" ? "Exa" : "Tavily"}</>}
+                {a.via && a.whyPicked && " · "}
+                {a.whyPicked && <>Picked for: {a.whyPicked}</>}
+              </p>
+            )}
           </div>
         </div>
       </Card>

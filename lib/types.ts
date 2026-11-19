@@ -1,3 +1,16 @@
+export type SearchEngine = "tavily" | "exa";
+export const SEARCH_ENGINES: { id: SearchEngine; name: string; blurb: string }[] = [
+  { id: "tavily", name: "Tavily", blurb: "Best for this week's news" },
+  { id: "exa", name: "Exa", blurb: "Best for features, analysis and long reads" },
+];
+
+/** What the server can offer for search, passed to the topic step. */
+export interface SearchOptions {
+  available: Record<SearchEngine, boolean>;
+  default: SearchEngine;
+  demo: boolean;
+}
+
 export type Tone = "Professional" | "Casual" | "Technical" | "Conversational";
 export const TONES: Tone[] = ["Professional", "Casual", "Technical", "Conversational"];
 
@@ -8,6 +21,8 @@ export interface Settings {
   customUrls: string;
   tone: Tone;
   audience: string;
+  /** Research engine for this newsletter. Missing = the server default. */
+  search?: SearchEngine;
 }
 
 export interface Article {
@@ -25,6 +40,8 @@ export interface Article {
   status: "pending" | "summarising" | "ready" | "error";
   custom?: boolean;
   whyPicked?: string;
+  /** Which search engine found it. */
+  via?: SearchEngine;
 }
 
 export interface ExecItem {

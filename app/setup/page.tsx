@@ -65,7 +65,7 @@ export default async function Setup() {
       ok: !!searchProviderName,
       need: "for live research",
       note: searchProviderName
-        ? `Using ${searchProviderName === "exa" ? "Exa" : "Tavily"}${has("TAVILY_API_KEY") && has("EXA_API_KEY") ? " (both keys set; SEARCH_PROVIDER chooses)" : ""}`
+        ? `Using ${searchProviderName === "exa" ? "Exa" : "Tavily"}${has("TAVILY_API_KEY") && has("EXA_API_KEY") ? " by default (both keys set: switch per newsletter on step 1)" : ""}`
         : "Demo articles until one is set",
     },
     {

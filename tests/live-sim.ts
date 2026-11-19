@@ -1,6 +1,8 @@
 // Simulates Tavily + Anthropic + article pages via a fake fetch, then runs the real pipeline.
 const SEARCH = process.env.SIM_SEARCH || "tavily";
-if (SEARCH === "exa") process.env.EXA_API_KEY = "exa-test"; else process.env.TAVILY_API_KEY = "tvly-test";
+// SIM_SEARCH: tavily | exa | both (both keys set; SIM_PICK chooses per newsletter)
+if (SEARCH === "exa" || SEARCH === "both") process.env.EXA_API_KEY = "exa-test";
+if (SEARCH === "tavily" || SEARCH === "both") process.env.TAVILY_API_KEY = "tvly-test";
 const PROVIDER = process.env.SIM_PROVIDER || "anthropic";
 if (PROVIDER === "openai") process.env.OPENAI_API_KEY = "sk-openai-test"; else process.env.ANTHROPIC_API_KEY = "sk-test";
 const now = Date.now(), day = 86400_000;
@@ -55,7 +57,9 @@ globalThis.fetch = (async (input: any, init?: any) => {
 
 (async () => {
   const { research, summarise } = await import("../lib/research");
-  const arts = await research({ topic: "Bristol UK News", numArticles: 5, daysBack: 7, customUrls: "", tone: "Professional", audience: "locals" });
+  const pick = process.env.SIM_PICK as "tavily" | "exa" | undefined;
+  const arts = await research({ topic: "Bristol UK News", numArticles: 5, daysBack: 7, customUrls: "", tone: "Professional", audience: "locals", search: pick });
+  console.log("via:", [...new Set(arts.map((a) => a.via))].join(","));
   for (const a of arts) console.log(`- ${a.title} | ${a.source} | ${a.publishedAt?.slice(0,10)} | ${a.wordCount}w ${a.readMins}min | img=${a.image}`);
   const s = await summarise({ title: "x", source: "y", url: "https://e.com", content: "z" }, { tone: "Professional", audience: "a", topic: "t" });
   console.log("summary headline:", s.headline);

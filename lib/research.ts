@@ -2,9 +2,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { askJson, cleanTitle } from "./llm";
 import { domainOf, fetchMeta, normaliseDate, sourceFromUrl, wordCount } from "./meta";
-import { EXCLUDE_DOMAINS, searchProvider, type SearchHit } from "./search";
-import { searchProviderName } from "./config";
-import type { Article, Settings } from "./types";
+import { EXCLUDE_DOMAINS, providerFor, type SearchHit } from "./search";
+import { resolveSearch } from "./config";
+import type { Article, SearchEngine, Settings } from "./types";
 
 const MAX_CONTENT_CHARS = 14000; // what we keep per article for summarising
 const MIN_WORDS = 250; // below this it's a stub, a paywall teaser or a listing page
@@ -39,7 +39,7 @@ function canonical(url: string) {
   }
 }
 
-export async function planQueries(s: Settings): Promise<string[]> {
+export async function planQueries(s: Settings, engine: SearchEngine | null = resolveSearch(s.search)): Promise<string[]> {
   const r = await askJson<{ queries: string[] }>({
     system: "You plan web searches for a newsletter editor who wants thoughtful, substantive reading.",
     prompt: `Newsletter topic: ${s.topic}
@@ -50,7 +50,7 @@ Write 5 distinct search queries that together cover this topic for the period.
 - 2 queries should find recent news on the topic.
 - 3 queries should find in-depth pieces: analysis, features, long reads, interviews, research write-ups, explainers.
 ${
-      searchProviderName === "exa"
+      engine === "exa"
         ? `- The search engine matches by meaning, so write each query as a short description of the ideal article, e.g. "an in-depth analysis of how Bristol's housing shortage is affecting young families". Include place names if the topic is local. Don't put dates in the queries.`
         : `- Keep each query short (3-8 words). Include place names if the topic is local. Don't put dates in the queries.`
     }`,
@@ -69,16 +69,18 @@ interface Candidate extends SearchHit {
 export type Progress = (msg: string) => void;
 
 export async function gatherCandidates(s: Settings, excludeUrls: string[] = [], progress: Progress = () => {}): Promise<Candidate[]> {
+  const engine = resolveSearch(s.search);
+  const provider = providerFor(engine);
   progress("Planning searches…");
-  const queries = await planQueries(s);
-  progress(`Searching the web (${queries.length} searches)…`);
+  const queries = await planQueries(s, engine);
+  progress(`Searching the web with ${engine === "exa" ? "Exa" : "Tavily"} (${queries.length} searches)…`);
   const end = new Date();
   const start = new Date(end.getTime() - s.daysBack * 86400_000);
   const startDate = isoDay(start);
   const endDate = isoDay(end);
 
   const results = await Promise.allSettled(
-    queries.map((query, i) => searchProvider.search({ query, startDate, endDate, news: i < 2, max: 12 })),
+    queries.map((query, i) => provider.search({ query, startDate, endDate, news: i < 2, max: 12 })),
   );
   const failures = results.filter((r) => r.status === "rejected");
   if (failures.length === results.length) {
@@ -202,6 +204,7 @@ export async function research(
     );
     for (const a of arts) {
       if (out.length >= want) break;
+      a.via = resolveSearch(s.search) ?? undefined;
       if (a.publishedAt && new Date(a.publishedAt).getTime() < start) continue; // page says it's older
       if (a.wordCount && a.wordCount < MIN_WORDS) continue;
       const d = domainOf(a.url);
@@ -213,10 +216,10 @@ export async function research(
   return out;
 }
 
-export async function articleFromUrl(url: string) {
+export async function articleFromUrl(url: string, engine: SearchEngine | null = resolveSearch()) {
   let raw: string | null = null;
   try {
-    raw = (await searchProvider.extract([url]))[url] ?? null;
+    raw = (await providerFor(engine).extract([url]))[url] ?? null;
   } catch {
     /* fall back to our own fetch */
   }
