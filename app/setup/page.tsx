@@ -4,9 +4,42 @@ import { config, llmProvider } from "@/lib/config";
 export const dynamic = "force-dynamic";
 
 /** Configuration check. Shows only whether each setting is present, never its value. */
+/** Ask Resend which sending domains it knows and whether EMAIL_FROM's domain is verified. */
+async function resendDomainCheck(): Promise<{ ok: boolean; note: string }> {
+  const from = config.emailFrom;
+  const fromDomain = (from.match(/@([^>\s]+)/)?.[1] ?? "").toLowerCase();
+  if (!config.resendKey) return { ok: false, note: `Sending from ${from}. Add RESEND_API_KEY to check the domain.` };
+  try {
+    const res = await fetch("https://api.resend.com/domains", {
+      headers: { authorization: `Bearer ${config.resendKey}` },
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: true, note: `Sending from ${from}. (This key is send-only, so the domain status can't be checked here; see resend.com/domains.)` };
+    }
+    const data = (await res.json()) as { data?: { name: string; status: string }[] };
+    const domains = data.data ?? [];
+    const match = domains.find((d) => d.name.toLowerCase() === fromDomain);
+    const list = domains.map((d) => `${d.name} (${d.status})`).join(", ") || "none";
+    if (!match) {
+      return {
+        ok: false,
+        note: `EMAIL_FROM uses ${fromDomain || "no domain"}, which isn't in your Resend account. Your Resend domains: ${list}. Change EMAIL_FROM to an address on one of them, or add ${fromDomain} in Resend.`,
+      };
+    }
+    if (match.status !== "verified") {
+      return { ok: false, note: `${fromDomain} is "${match.status}" in Resend, not verified yet. Check its DNS records at resend.com/domains.` };
+    }
+    return { ok: true, note: `Sending from ${from} · ${fromDomain} is verified` };
+  } catch (e) {
+    return { ok: false, note: `Couldn't reach Resend to check: ${(e as Error).message}` };
+  }
+}
+
 export default async function Setup() {
   const has = (k: string) => !!(process.env[k] ?? "").trim();
-  const db = await checkDb();
+  const [db, resendCheck] = await Promise.all([checkDb(), resendDomainCheck()]);
   const appUrl = config.appUrl;
 
   const rows: { name: string; ok: boolean; need: string; note?: string }[] = [
@@ -35,7 +68,7 @@ export default async function Setup() {
       note: llmProvider === "anthropic" ? `Using Claude (${config.model} / ${config.fastModel})` : llmProvider === "openai" ? `Using OpenAI (${config.openaiModel} / ${config.openaiFastModel})` : "Demo summaries until one is set",
     },
     { name: "RESEND_API_KEY", ok: has("RESEND_API_KEY"), need: "for sending", note: has("RESEND_API_KEY") ? undefined : "Sends are logged, not emailed" },
-    { name: "EMAIL_FROM", ok: has("EMAIL_FROM"), need: "for sending", note: "Must be on a domain verified in Resend" },
+    { name: "EMAIL_FROM (sending domain)", ok: has("EMAIL_FROM") && resendCheck.ok, need: "for sending", note: (has("EMAIL_FROM") ? "" : "Not set, so the default is used. ") + resendCheck.note },
     {
       name: "APP_URL",
       ok: !/localhost/.test(appUrl),

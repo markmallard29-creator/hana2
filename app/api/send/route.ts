@@ -9,6 +9,14 @@ export const maxDuration = 300;
 
 const BATCH = 100; // Resend batch API limit
 
+/** Turn Resend's domain errors into something actionable. */
+function resendError(message: string) {
+  if (/domain is not verified|domain mismatch/i.test(message)) {
+    return `Resend won't send from ${config.emailFrom}: ${message} Set EMAIL_FROM to an address on a domain that shows "Verified" in Resend (see /setup).`;
+  }
+  return `Resend: ${message}`;
+}
+
 /**
  * POST { draft, testEmail }          -> sends one "[TEST]" copy, nothing is marked sent
  * POST { draft, listId, confirm: n } -> sends to every active subscriber on the list.
@@ -50,7 +58,7 @@ export const POST = route(async (req: Request) => {
         html,
         replyTo: config.emailReplyTo || undefined,
       });
-      if (error) return fail(`Resend: ${error.message}`, 502);
+      if (error) return fail(resendError(error.message), 502);
     } else {
       console.log(`[demo send] test to ${to}: ${d.subject}`);
     }
@@ -88,7 +96,7 @@ export const POST = route(async (req: Request) => {
       });
       if (resend) {
         const { error } = await resend.batch.send(emails);
-        if (error) throw new Error(`Resend: ${error.message}`);
+        if (error) throw new Error(resendError(error.message));
       } else {
         console.log(`[demo send] batch of ${emails.length} to "${list.name}"`);
       }
