@@ -1,4 +1,5 @@
-import { checkDb, onRailway, onServerless, storageKind } from "@/lib/db";
+import { checkDb, onRailway, onRender, onServerless, RENDER_DISK, storageKind } from "@/lib/db";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -6,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function Setup() {
   const has = (k: string) => !!(process.env[k] ?? "").trim();
   const db = await checkDb();
-  const appUrl = process.env.APP_URL ?? "";
+  const appUrl = config.appUrl;
 
   const rows: { name: string; ok: boolean; need: string; note?: string }[] = [
     { name: "Database", ok: db.ok, need: "required", note: db.ok ? `Connected · ${storageKind()}` : db.error },
@@ -32,9 +33,9 @@ export default async function Setup() {
     { name: "EMAIL_FROM", ok: has("EMAIL_FROM"), need: "for sending", note: "Must be on a domain verified in Resend" },
     {
       name: "APP_URL",
-      ok: has("APP_URL") && !/localhost/.test(appUrl),
+      ok: !/localhost/.test(appUrl),
       need: "for unsubscribe links",
-      note: /localhost/.test(appUrl) || !appUrl ? "Set to this site's public address, e.g. https://hana-production.up.railway.app" : appUrl,
+      note: /localhost/.test(appUrl) ? "Set to this site's public address, e.g. https://hana.onrender.com" : `${appUrl}${has("APP_URL") ? "" : " (detected automatically)"}`,
     },
     { name: "APP_PASSWORD", ok: has("APP_PASSWORD"), need: "recommended", note: has("APP_PASSWORD") ? "Login is on" : "Anyone with the link can use the app" },
     { name: "SENDER_ADDRESS", ok: has("SENDER_ADDRESS"), need: "recommended", note: "Postal address in the email footer (PECR / CAN-SPAM)" },
@@ -44,7 +45,7 @@ export default async function Setup() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <h1 className="text-3xl font-bold tracking-tight">Setup check</h1>
       <p className="mt-1 text-gray-500">
-        Running {onRailway ? "on Railway" : onServerless ? "on a serverless host" : "locally"}. Values are never shown, only whether they&apos;re set.
+        Running {onRender ? `on Render (data disk expected at ${RENDER_DISK})` : onRailway ? "on Railway" : onServerless ? "on a serverless host" : "locally"}. Values are never shown, only whether they&apos;re set.
         After changing environment variables, redeploy.
       </p>
       <div className="mt-8 overflow-hidden rounded-lg border border-gray-200">

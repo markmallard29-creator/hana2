@@ -1,0 +1,31 @@
+# Render Blueprint: New → Blueprint → pick this repo. Creates the web service and its data disk.
+services:
+  - type: web
+    name: hana
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: hana-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: SENDER_ADDRESS
+        sync: false
+      - key: TEST_EMAIL
+        sync: false

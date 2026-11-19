@@ -11,7 +11,13 @@ export const config = {
   emailFrom: env("EMAIL_FROM") || "HANA <newsletter@hana.news>",
   emailReplyTo: env("EMAIL_REPLY_TO"),
   testEmail: env("TEST_EMAIL"),
-  appUrl: (env("APP_URL") || "http://localhost:3000").replace(/\/$/, ""),
+  // Public address for unsubscribe/view links. Falls back to the host's own address.
+  appUrl: (
+    env("APP_URL") ||
+    env("RENDER_EXTERNAL_URL") ||
+    (env("RAILWAY_PUBLIC_DOMAIN") ? `https://${env("RAILWAY_PUBLIC_DOMAIN")}` : "") ||
+    "http://localhost:3000"
+  ).replace(/\/$/, ""),
   senderAddress: env("SENDER_ADDRESS"),
 };
 

@@ -36,7 +36,22 @@ npm run dev                  # http://localhost:3000
 
 With no keys it runs in **demo mode**: sample articles, and sends are logged instead of emailed. A banner shows which parts are in demo mode.
 
-## Deploy on Railway (recommended)
+## Deploy on Render
+
+Render runs HANA as an always-on server on a paid instance (Starter or above). Data lives on a Render **persistent disk** at `/var/data`. You don't need Turso.
+
+**Easiest: the Blueprint.** In Render: **New → Blueprint**, pick this repo, and Render reads `render.yaml`. That creates the web service (Starter plan) with a 1 GB disk at `/var/data`, then asks you for each key. Fill them in and click **Apply**.
+
+**Or by hand:** New → Web Service → this repo, then:
+- Runtime **Node**, Build command `npm ci && npm run build`, Start command `npm start`, Health check path `/api/health`, instance type **Starter**.
+- **Advanced → Add disk:** mount path **`/var/data`**, 1 GB.
+- **Environment:** `TAVILY_API_KEY`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PASSWORD`, `SENDER_ADDRESS`, `TEST_EMAIL`, and `NODE_VERSION=22`.
+
+You don't need `APP_URL` or `DATABASE_URL`: the app picks up Render's own address (`RENDER_EXTERNAL_URL`) and uses the disk. Without a disk at `/var/data` the app refuses to store data and says so. Then open **/setup**.
+
+With a disk attached, deploys have a few seconds of downtime, and the service can't be scaled to multiple instances. That's fine for HANA.
+
+## Deploy on Railway
 
 Railway runs HANA as a normal always-on server, so long research requests are fine, and the database can live on a Railway **volume**. You don't need Turso.
 

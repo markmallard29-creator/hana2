@@ -21,12 +21,20 @@ export const onServerless = !!(process.env.NETLIFY || process.env.VERCEL || proc
 /** Railway: a normal server, but its disk is wiped on every deploy unless a volume is attached. */
 export const onRailway = !!(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);
 const railwayVolume = (process.env.RAILWAY_VOLUME_MOUNT_PATH || "").trim();
+/** Render: also a normal server; data must live on a persistent disk (we expect it at /var/data). */
+export const onRender = process.env.RENDER === "true";
+export const RENDER_DISK = (process.env.DATA_DIR || "/var/data").trim();
+async function renderDiskReady() {
+  const { existsSync } = await import("node:fs");
+  return existsSync(RENDER_DISK);
+}
 
 /** Which storage the app will use, for the setup page. */
 export function storageKind() {
   const url = (process.env.DATABASE_URL || "").trim();
   if (url && !url.startsWith("file:")) return "Hosted database (Turso)";
   if (onRailway) return railwayVolume ? `Railway volume (${railwayVolume}/hana.db)` : "None: attach a Railway volume";
+  if (onRender) return `Render disk (${RENDER_DISK}/hana.db)`;
   if (onServerless) return "None: set DATABASE_URL";
   return `Local file (${url || "file:./data/hana.db"})`;
 }
@@ -53,6 +61,14 @@ async function getClient(): Promise<Client> {
         );
       }
       fileUrl = `file:${railwayVolume.replace(/\/$/, "")}/hana.db`;
+    }
+    if (onRender && !url) {
+      if (!(await renderDiskReady())) {
+        throw new SetupError(
+          `No persistent disk found at ${RENDER_DISK}, so your lists and newsletters would be wiped on every deploy. In Render, open this service → Disks → Add disk with mount path ${RENDER_DISK} (1 GB is plenty).`,
+        );
+      }
+      fileUrl = `file:${RENDER_DISK.replace(/\/$/, "")}/hana.db`;
     }
     const { mkdirSync } = await import("node:fs");
     const { dirname } = await import("node:path");
