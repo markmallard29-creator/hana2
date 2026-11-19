@@ -2,7 +2,7 @@
 
 A rebuild of app.hana.news. Pick a topic, and HANA researches the web for the best recent reads (weighted towards substantive long-form pieces), pulls each article's image and publication name, summarises everything with Claude, lets you edit and reorder, and sends to your list through Resend.
 
-**Stack:** Next.js 15 · Tailwind · Tavily (search) · Claude (ranking + writing) · Resend (email) · SQLite via libsql/Turso (storage).
+**Stack:** Next.js 15 · Tailwind · Tavily (search) · Claude or OpenAI (ranking + writing) · Resend (email) · SQLite (storage).
 
 ## The six steps
 
@@ -45,7 +45,7 @@ Render runs HANA as an always-on server on a paid instance (Starter or above). D
 **Or by hand:** New → Web Service → this repo, then:
 - Runtime **Node**, Build command `npm ci && npm run build`, Start command `npm start`, Health check path `/api/health`, instance type **Starter**.
 - **Advanced → Add disk:** mount path **`/var/data`**, 1 GB.
-- **Environment:** `TAVILY_API_KEY`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PASSWORD`, `SENDER_ADDRESS`, `TEST_EMAIL`, and `NODE_VERSION=22`.
+- **Environment:** `TAVILY_API_KEY`, `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`), `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PASSWORD`, `SENDER_ADDRESS`, `TEST_EMAIL`, and `NODE_VERSION=22`.
 
 You don't need `APP_URL` or `DATABASE_URL`: the app picks up Render's own address (`RENDER_EXTERNAL_URL`) and uses the disk. Without a disk at `/var/data` the app refuses to store data and says so. Then open **/setup**.
 
@@ -60,7 +60,7 @@ Railway runs HANA as a normal always-on server, so long research requests are fi
 3. In the Railway dashboard, on the project canvas:
    - **Volume:** right-click the canvas → *Volume* → attach it to the HANA service with mount path **`/app/data`**. The app finds it automatically through `RAILWAY_VOLUME_MOUNT_PATH`, and without it the app refuses to store data.
    - **Domain:** service → *Settings* → *Networking* → **Generate Domain** (or run `railway domain`).
-   - **Variables:** service → *Variables*. Add `TAVILY_API_KEY`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL` (the domain you just generated, with https://), `APP_PASSWORD`, `SENDER_ADDRESS`, `TEST_EMAIL`. Do **not** set `DATABASE_URL`.
+   - **Variables:** service → *Variables*. Add `TAVILY_API_KEY`, `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`), `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL` (the domain you just generated, with https://), `APP_PASSWORD`, `SENDER_ADDRESS`, `TEST_EMAIL`. Do **not** set `DATABASE_URL`.
 4. Railway redeploys when variables change. If it doesn't, run `railway up` again.
 5. Open **/setup** on your site. Every "required" row should be ticked, and Database should say *Railway volume*.
 
@@ -74,6 +74,17 @@ Railway runs HANA as a normal always-on server, so long research requests are fi
 - **Netlify:** not recommended. Requests stop after 10s (26s on request) and research takes 30–60s.
 
 Tables are created automatically on first request, so there are no migrations to run.
+
+## Claude or OpenAI
+
+Set either `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. If both are set, Claude is used unless `LLM_PROVIDER=openai`. Default models:
+
+| | Ranking, title, subject, summary bullets | Per-article summaries |
+|---|---|---|
+| Claude | `claude-sonnet-5-5` (`ANTHROPIC_MODEL`) | `claude-haiku-5-5` (`ANTHROPIC_FAST_MODEL`) |
+| OpenAI | `gpt-6.2-sol` (`OPENAI_MODEL`) | `gpt-6-luna` (`OPENAI_FAST_MODEL`) |
+
+/setup shows which provider and models are active.
 
 ## Moving your lists over from the old HANA
 

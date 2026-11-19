@@ -1,5 +1,7 @@
 // Simulates Tavily + Anthropic + article pages via a fake fetch, then runs the real pipeline.
-process.env.TAVILY_API_KEY = "tvly-test"; process.env.ANTHROPIC_API_KEY = "sk-test";
+process.env.TAVILY_API_KEY = "tvly-test";
+const PROVIDER = process.env.SIM_PROVIDER || "anthropic";
+if (PROVIDER === "openai") process.env.OPENAI_API_KEY = "sk-openai-test"; else process.env.ANTHROPIC_API_KEY = "sk-test";
 const now = Date.now(), day = 86400_000;
 const page = (title: string, site: string, img: string, date: string, words: number) =>
   `<html><head><meta property="og:title" content="${title} | ${site}"><meta property="og:site_name" content="${site}">
@@ -24,12 +26,18 @@ globalThis.fetch = (async (input: any, init?: any) => {
     if (!body.start_date || !body.include_published_date) throw new Error("bad tavily params");
     return Response.json({ results: hits.map((h) => ({ url: h.url, title: h.title, content: "snippet", raw_content: "word ".repeat(h.w), published_date: new Date(now - h.d * day).toISOString(), score: 0.8 })) });
   }
-  if (url.includes("api.anthropic.com")) {
-    const text = body.messages.at(-1).content as string;
+  if (url.includes("api.anthropic.com") || url.includes("api.openai.com")) {
+    const isOpenAI = url.includes("api.openai.com");
+    if (isOpenAI && !(body.model && body.instructions && Array.isArray(body.input))) throw new Error("bad openai params");
+    const text = (isOpenAI ? body.input : body.messages).at(-1).content as string;
     let out: any;
     if (text.includes("search queries")) out = { queries: ["bristol news", "bristol council", "bristol analysis", "bristol long read", "bristol interview"] };
     else if (text.includes("Pick the")) { const ids = [...text.matchAll(/\[(\d+)\] ([^\n]+)/g)].map((m) => ({ id: m[1], t: m[2] })); out = { picks: ids.map((x) => ({ id: x.id, why: "test" })) }; console.log("candidates sent to Claude:", ids.map((x) => x.t)); }
     else out = { headline: '"Quoted headline"', summary: "A summary." };
+    if (isOpenAI) {
+      calls.push(`openai:${body.model}`);
+      return Response.json({ id: "r", object: "response", output: [{ type: "reasoning" }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(out) }] }] });
+    }
     return Response.json({ id: "m", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: "```json\n" + JSON.stringify(out) + "\n```" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } });
   }
   const h = hits.find((x) => x.url.split("?")[0] === url.split("?")[0]);
@@ -43,5 +51,5 @@ globalThis.fetch = (async (input: any, init?: any) => {
   for (const a of arts) console.log(`- ${a.title} | ${a.source} | ${a.publishedAt?.slice(0,10)} | ${a.wordCount}w ${a.readMins}min | img=${a.image}`);
   const s = await summarise({ title: "x", source: "y", url: "https://e.com", content: "z" }, { tone: "Professional", audience: "a", topic: "t" });
   console.log("summary headline:", s.headline);
-  console.log("tavily calls:", calls.filter((c) => c.includes("tavily")).length);
+  console.log("tavily calls:", calls.filter((c) => c.includes("tavily")).length, "| models:", [...new Set(calls.filter((c) => c.startsWith("openai:")))].join(", ") || "anthropic");
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

@@ -1,6 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { config } from "./config";
+import { config, llmProvider } from "./config";
 
 let client: Anthropic | null = null;
 function anthropic() {
@@ -39,16 +39,11 @@ export async function askJson<T>(opts: {
     },
   ];
   for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await anthropic().messages.create({
-      model: opts.fast ? config.fastModel : config.model,
-      max_tokens: opts.maxTokens ?? 2000,
-      system: `${opts.system}\n\n${HOUSE_STYLE}`,
-      messages,
-    });
-    const text = res.content
-      .map((b) => (b.type === "text" ? b.text : ""))
-      .join("")
-      .trim();
+    const system = `${opts.system}\n\n${HOUSE_STYLE}`;
+    const text =
+      llmProvider === "openai"
+        ? await openaiText(system, messages, opts.fast, opts.maxTokens ?? 2000)
+        : await anthropicText(system, messages, opts.fast, opts.maxTokens ?? 2000);
     try {
       return extractJson(text) as T;
     } catch (e) {
@@ -58,6 +53,48 @@ export async function askJson<T>(opts: {
     }
   }
   throw new Error("unreachable");
+}
+
+async function anthropicText(system: string, messages: Anthropic.MessageParam[], fast: boolean | undefined, maxTokens: number) {
+  const res = await anthropic().messages.create({
+    model: fast ? config.fastModel : config.model,
+    max_tokens: maxTokens,
+    system,
+    messages,
+  });
+  return res.content
+    .map((b) => (b.type === "text" ? b.text : ""))
+    .join("")
+    .trim();
+}
+
+/** OpenAI via the Responses API (plain fetch, no extra dependency). */
+async function openaiText(system: string, messages: Anthropic.MessageParam[], fast: boolean | undefined, maxTokens: number) {
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.openaiKey}` },
+    body: JSON.stringify({
+      model: fast ? config.openaiFastModel : config.openaiModel,
+      instructions: system,
+      input: messages.map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" })),
+      // reasoning models spend part of this budget thinking, so leave headroom
+      max_output_tokens: maxTokens * 3 + 2000,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: { message?: string };
+    output_text?: string;
+    output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+  };
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${data.error?.message ?? "request failed"}`);
+  if (typeof data.output_text === "string") return data.output_text.trim();
+  return (data.output ?? [])
+    .flatMap((o) => o.content ?? [])
+    .filter((c) => c.type === "output_text" && c.text)
+    .map((c) => c.text)
+    .join("")
+    .trim();
 }
 
 /** Strip wrapping quotes and trailing site names the model or the page title might add. */

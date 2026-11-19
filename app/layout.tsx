@@ -43,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="bg-amber-50 text-center text-sm text-amber-900">
             <div className="mx-auto max-w-[1250px] px-6 py-2">
               <strong>Demo mode:</strong>{" "}
-              {demoResearch && "sample articles instead of live research (set TAVILY_API_KEY and ANTHROPIC_API_KEY)"}
+              {demoResearch && "sample articles instead of live research (set TAVILY_API_KEY and ANTHROPIC_API_KEY or OPENAI_API_KEY)"}
               {demoResearch && demoSend && "; "}
               {demoSend && "emails are logged, not sent (set RESEND_API_KEY)"}.
             </div>

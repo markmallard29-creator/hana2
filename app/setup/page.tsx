@@ -1,5 +1,5 @@
 import { checkDb, onRailway, onRender, onServerless, RENDER_DISK, storageKind } from "@/lib/db";
-import { config } from "@/lib/config";
+import { config, llmProvider } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,12 @@ export default async function Setup() {
         ]
       : []),
     { name: "TAVILY_API_KEY", ok: has("TAVILY_API_KEY"), need: "for live research", note: has("TAVILY_API_KEY") ? undefined : "Demo articles until set" },
-    { name: "ANTHROPIC_API_KEY", ok: has("ANTHROPIC_API_KEY"), need: "for live research", note: has("ANTHROPIC_API_KEY") ? undefined : "Demo summaries until set" },
+    {
+      name: "AI provider (ANTHROPIC_API_KEY or OPENAI_API_KEY)",
+      ok: !!llmProvider,
+      need: "for live research",
+      note: llmProvider === "anthropic" ? `Using Claude (${config.model} / ${config.fastModel})` : llmProvider === "openai" ? `Using OpenAI (${config.openaiModel} / ${config.openaiFastModel})` : "Demo summaries until one is set",
+    },
     { name: "RESEND_API_KEY", ok: has("RESEND_API_KEY"), need: "for sending", note: has("RESEND_API_KEY") ? undefined : "Sends are logged, not emailed" },
     { name: "EMAIL_FROM", ok: has("EMAIL_FROM"), need: "for sending", note: "Must be on a domain verified in Resend" },
     {
