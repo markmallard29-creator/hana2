@@ -1,39 +1,82 @@
-HANA replacement: build notes (19 Nov 2026)
+# HANA: newsletter builder
 
-What was built: a Next.js 15 production web app replicating app.hana.news's 6-step flow (topic → articles → customise → preview → send → done), plus a dashboard and email-list management. Delivered as hana-newsletter.zip.
+A rebuild of app.hana.news. Pick a topic, and HANA researches the web for the best recent reads (weighted towards substantive long-form pieces), pulls each article's image and publication name, summarises everything with Claude, lets you edit and reorder, and sends to your list through Resend.
 
-Decisions (Mark):
+**Stack:** Next.js 15 · Tailwind · Tavily (search) · Claude (ranking + writing) · Resend (email) · SQLite via libsql/Turso (storage).
 
-Production web app; reasons for replacing are cost/maintenance and article quality.
-Tavily for search, Claude for writing, Resend for sending.
-Host on Railway. Netlify: requests time out after 10–26s. Vercel: blocked at the two-factor login step.
-Database: SQLite on a Railway volume (mount /app/data). Turso isn't needed on Railway.
+## The six steps
 
-Stack: Next.js + Tailwind · Tavily · Claude (Sonnet for ranking and copy, Haiku for summaries) · Resend · SQLite (Railway volume, or Turso on serverless hosts). Demo mode runs with no keys.
+1. **Topic**: topic (the wand sharpens it into a research brief), 1–20 articles, 1–30 days back, custom URLs, tone, audience.
+2. **Articles**: cards fill in as each summary finishes. Edit headline, publication, summary or image; drag (or keyboard: Space, arrows, Space) to reorder; delete; add by URL or "find 3 more". Long reads are badged.
+3. **Customise**: title, style (HANA Blue / Bristol / Oxford / Media Morph), edition label, intro (AI draft optional), executive summary bullets.
+4. **Preview**: desktop / tablet / mobile, plus the raw HTML to copy or download.
+5. **Send**: subject, list (with subscriber counts), add recipients, **send a test first**, then a confirm dialog with the exact recipient count.
+6. **Done**.
 
-Deployment history:
+The dashboard lists drafts and sent editions. "New edition with these settings" copies last week's recipe (topic, counts, tone, style, list) and bumps "Edition 57" to "Edition 58".
 
-Netlify deploy (fastidious-paprenjak-a7e333.netlify.app) crashed on load: no hosted database, so the app tried to write a file on a read-only disk.
-Fixed: production uses the pure-fetch libsql client for remote databases; there's a clear setup message and a /setup page.
-Railway-ready: the app uses RAILWAY_VOLUME_MOUNT_PATH automatically and refuses to store data if no volume is attached. Research streams NDJSON progress (avoids Railway's reported ~60s idle first-byte cut-off). There's a /api/health health check and a railway.json.
+## How research works (lib/research.ts)
 
-Changes from the old HANA:
+1. Claude plans 5 searches: 2 news-angle, 3 depth-angle (analysis, features, interviews, long reads).
+2. Tavily runs them with `start_date`/`end_date` for the window and returns full article text.
+3. Filters: drop social/video/aggregator domains, homepages and tag pages, stubs under 250 words, anything dated before the window, and duplicate URLs (tracking parameters ignored) or headlines.
+4. Claude ranks what's left on relevance → substance → length (over 1,200 words favoured) → variety (max 2 per publication, no two on the same story).
+5. Each pick's own page is fetched for `og:image`, the publication name and the real publish date; anything that turns out to be out of window is dropped and the next pick is used.
+6. Summaries run 3 at a time on the fast model, using the article's full text.
 
-Test send before every real send; the confirm dialog shows the exact recipient count.
-Titles no longer wrapped in quote marks.
-List names must be unique (the old app had duplicate "Main Email List" / "Colleagues").
-"Read more at" names the real publication.
-Article cards become editable as each summary finishes.
-Article count capped at 1–20 (the old slider went to 25).
-Ranking favours long reads: full text and word count from Tavily, Claude ranks for substance, at most 2 articles per publication.
-Unsubscribe needs a button click (safe from Microsoft Safe Links scanners); one-click unsubscribe headers included; opted-out people are never re-added by an import.
-Double-send lock; partial-failure recording.
-Style presets: HANA Blue, Bristol (dark + gold), Oxford (black + yellow), Media Morph.
-"New edition with these settings" reuses last week's settings and bumps the edition number.
+The search provider sits behind an interface in `lib/search.ts`. If Tavily's picks are still too news-heavy, implement `SearchProvider` for Exa and change one line.
 
-Open risks:
+## Run locally
 
-Tavily is news-leaning; the search layer is swappable (lib/search.ts) if long-read quality disappoints. Exa is the alternative.
-The Railway volume is a single disk with no automatic backups; download hana.db periodically.
+```bash
+cp .env.example .env.local   # fill in keys, or leave blank for demo mode
+npm install
+npm run dev                  # http://localhost:3000
+```
 
-Not yet built: scheduling, open/click tracking, per-user accounts.
+With no keys it runs in **demo mode**: sample articles, and sends are logged instead of emailed. A banner shows which parts are in demo mode.
+
+## Deploy on Railway (recommended)
+
+Railway runs HANA as a normal always-on server, so long research requests are fine, and the database can live on a Railway **volume**. You don't need Turso.
+
+1. Install the CLI: `npm i -g @railway/cli` (or `brew install railway`), then `railway login`.
+2. In this folder: `railway init` (creates the project), then `railway up` (builds and deploys).
+3. In the Railway dashboard, on the project canvas:
+   - **Volume:** right-click the canvas → *Volume* → attach it to the HANA service with mount path **`/app/data`**. The app finds it automatically through `RAILWAY_VOLUME_MOUNT_PATH`, and without it the app refuses to store data.
+   - **Domain:** service → *Settings* → *Networking* → **Generate Domain** (or run `railway domain`).
+   - **Variables:** service → *Variables*. Add `TAVILY_API_KEY`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL` (the domain you just generated, with https://), `APP_PASSWORD`, `SENDER_ADDRESS`, `TEST_EMAIL`. Do **not** set `DATABASE_URL`.
+4. Railway redeploys when variables change. If it doesn't, run `railway up` again.
+5. Open **/setup** on your site. Every "required" row should be ticked, and Database should say *Railway volume*.
+
+`railway.json` sets the start command and a health check on `/api/health`. Research streams progress to the browser, so Railway's proxy never sees an idle connection.
+
+**Backups:** the volume is a single disk. Every so often, download `hana.db` with `railway volume browse`, or export your lists.
+
+## Other hosts
+
+- **Vercel:** works. Set `DATABASE_URL`/`DATABASE_AUTH_TOKEN` to a Turso database (turso.tech → Create database → copy URL, Create token).
+- **Netlify:** not recommended. Requests stop after 10s (26s on request) and research takes 30–60s.
+
+Tables are created automatically on first request, so there are no migrations to run.
+
+## Moving your lists over from the old HANA
+
+Export each list as CSV and paste it into **Email lists → Add subscribers**. `email,name` columns, `Name <email>` lines and plain addresses all work. List names must be unique.
+
+## Safety rails
+
+- A test send to yourself is offered on every send, and the confirm dialog warns if you skipped it.
+- The send request must quote the recipient count you confirmed; if the list changed in between, it stops.
+- A newsletter is locked while sending, so a double-click can't send twice. If a send fails partway, it records how many went out rather than letting you resend to everyone.
+- Unsubscribe needs a button click (corporate link scanners like Microsoft Safe Links open every link and would otherwise unsubscribe people). Gmail/Apple one-click unsubscribe headers are included.
+- People who unsubscribed are never re-added by an import.
+- Every email has an unsubscribe link, a "view in browser" link and your postal address (`SENDER_ADDRESS`), as UK PECR and US CAN-SPAM require.
+- The whole app sits behind `APP_PASSWORD` except the unsubscribe and browser-view pages.
+
+## Known limits
+
+- Images are hotlinked from the publisher. A few sites block that, so check the test email; swap or remove any broken image on step 2.
+- Single shared password, no per-user accounts.
+- No open or click tracking and no scheduling yet. Resend webhooks and a Vercel cron are the natural next steps.
+- Paywalled sites (FT, some Telegraph) often return only a teaser. These are filtered out as stubs rather than summarised from a teaser.

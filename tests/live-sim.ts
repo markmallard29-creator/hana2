@@ -1,0 +1,47 @@
+// Simulates Tavily + Anthropic + article pages via a fake fetch, then runs the real pipeline.
+process.env.TAVILY_API_KEY = "tvly-test"; process.env.ANTHROPIC_API_KEY = "sk-test";
+const now = Date.now(), day = 86400_000;
+const page = (title: string, site: string, img: string, date: string, words: number) =>
+  `<html><head><meta property="og:title" content="${title} | ${site}"><meta property="og:site_name" content="${site}">
+   <meta property="og:image" content="${img}"><meta property="article:published_time" content="${date}"></head>
+   <body><article><p>${"word ".repeat(words)}</p></article></body></html>`;
+const hits = [
+  { url: "https://www.bristolpost.co.uk/news/bristol-news/long-feature-1", title: "Inside Bristol's housing squeeze", d: 1, w: 2600, site: "Bristol Post" },
+  { url: "https://www.bbc.co.uk/news/articles/abc123", title: "Clean air zone two years on", d: 2, w: 1400, site: "BBC News" },
+  { url: "https://www.bristol247.com/news-and-features/news/old-story", title: "Very old story", d: 20, w: 1800, site: "Bristol24/7" },
+  { url: "https://www.bristolpost.co.uk/news/bristol-news/short-stub", title: "Stub", d: 1, w: 90, site: "Bristol Post" },
+  { url: "https://www.bristolpost.co.uk/", title: "Homepage", d: 1, w: 900, site: "Bristol Post" },
+  { url: "https://www.youtube.com/watch?v=1", title: "Video", d: 1, w: 900, site: "YouTube" },
+  { url: "https://www.theguardian.com/uk-news/2026/nov/17/bristol-arena?utm_source=x", title: "Bristol's arena finally gets going", d: 2, w: 3100, site: "The Guardian" },
+  { url: "https://www.theguardian.com/uk-news/2026/nov/17/bristol-arena", title: "Bristol's arena finally gets going (dup)", d: 2, w: 3100, site: "The Guardian" },
+];
+const calls: string[] = [];
+globalThis.fetch = (async (input: any, init?: any) => {
+  const url = typeof input === "string" ? input : input.url;
+  const body = init?.body ? JSON.parse(init.body) : null;
+  calls.push(url.replace(/\?.*/, ""));
+  if (url.includes("api.tavily.com/search")) {
+    if (!body.start_date || !body.include_published_date) throw new Error("bad tavily params");
+    return Response.json({ results: hits.map((h) => ({ url: h.url, title: h.title, content: "snippet", raw_content: "word ".repeat(h.w), published_date: new Date(now - h.d * day).toISOString(), score: 0.8 })) });
+  }
+  if (url.includes("api.anthropic.com")) {
+    const text = body.messages.at(-1).content as string;
+    let out: any;
+    if (text.includes("search queries")) out = { queries: ["bristol news", "bristol council", "bristol analysis", "bristol long read", "bristol interview"] };
+    else if (text.includes("Pick the")) { const ids = [...text.matchAll(/\[(\d+)\] ([^\n]+)/g)].map((m) => ({ id: m[1], t: m[2] })); out = { picks: ids.map((x) => ({ id: x.id, why: "test" })) }; console.log("candidates sent to Claude:", ids.map((x) => x.t)); }
+    else out = { headline: '"Quoted headline"', summary: "A summary." };
+    return Response.json({ id: "m", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: "```json\n" + JSON.stringify(out) + "\n```" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } });
+  }
+  const h = hits.find((x) => x.url.split("?")[0] === url.split("?")[0]);
+  if (h) return new Response(page(h.title, h.site, "/img/hero.jpg", new Date(now - h.d * day).toISOString(), h.w), { headers: { "content-type": "text/html" } });
+  return new Response("nope", { status: 404 });
+}) as any;
+
+(async () => {
+  const { research, summarise } = await import("../lib/research");
+  const arts = await research({ topic: "Bristol UK News", numArticles: 5, daysBack: 7, customUrls: "", tone: "Professional", audience: "locals" });
+  for (const a of arts) console.log(`- ${a.title} | ${a.source} | ${a.publishedAt?.slice(0,10)} | ${a.wordCount}w ${a.readMins}min | img=${a.image}`);
+  const s = await summarise({ title: "x", source: "y", url: "https://e.com", content: "z" }, { tone: "Professional", audience: "a", topic: "t" });
+  console.log("summary headline:", s.headline);
+  console.log("tavily calls:", calls.filter((c) => c.includes("tavily")).length);
+})().catch((e) => { console.error("FAIL", e); process.exit(1); });
