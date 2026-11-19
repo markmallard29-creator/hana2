@@ -10,7 +10,9 @@ export default function Login() {
 
   return (
     <main className="mx-auto max-w-sm px-6 py-24">
-      <h1 className="text-2xl font-bold">Sign in to HANA</h1>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/hana-logo.png" alt="hana." width={316} height={124} className="mb-8 h-14 w-auto" />
+      <h1 className="text-2xl font-bold">Sign in</h1>
       <form
         className="mt-8 space-y-4"
         onSubmit={async (e) => {

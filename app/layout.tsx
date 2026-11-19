@@ -18,8 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans">
         <header className="border-b border-gray-200">
           <div className="mx-auto flex h-16 max-w-[1250px] items-center justify-between px-6">
-            <Link href="/" className="text-xl font-extrabold tracking-tight">
-              HANA<span className="text-brand">.</span>
+            <Link href="/" aria-label="HANA home" className="flex items-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/hana-logo.png" alt="hana." width={316} height={124} className="h-11 w-auto" />
             </Link>
             <nav className="flex items-center gap-1 text-[15px]">
               <Link href="/" className="rounded-md px-3 py-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900">
