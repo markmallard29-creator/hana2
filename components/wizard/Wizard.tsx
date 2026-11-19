@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Stepper } from "../Stepper";
-import { Notice, api, apiStream } from "../ui";
+import { Button, Notice, api, apiStream } from "../ui";
 import { Footer, type NextBtn } from "./Footer";
 import { DEFAULT_SETTINGS, type Article, type Draft, type SearchOptions, type Settings } from "@/lib/types";
 import { StepTopic } from "./StepTopic";
@@ -203,7 +203,16 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
       <div className="mx-auto mt-12 max-w-[1150px] px-6">
         {error && (
           <div className="mb-6">
-            <Notice tone={step === 2 && a.length ? "warn" : "error"}>{error}</Notice>
+            <Notice tone={step === 2 && a.length ? "warn" : "error"}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span>{error}</span>
+                {step === 2 && !a.length && !phase && (
+                  <Button size="sm" variant="outline" onClick={() => void runResearch()}>
+                    Try again
+                  </Button>
+                )}
+              </div>
+            </Notice>
           </div>
         )}
         {step === 1 && (
