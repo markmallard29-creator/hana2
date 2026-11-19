@@ -122,6 +122,19 @@ async function db() {
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
           )`,
+          `CREATE TABLE IF NOT EXISTS usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            edition_id TEXT,
+            provider TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            model TEXT,
+            units REAL NOT NULL DEFAULT 0,
+            unit_label TEXT NOT NULL,
+            cost_usd REAL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )`,
+          `CREATE INDEX IF NOT EXISTS usage_by_edition ON usage_events (edition_id)`,
+          `CREATE INDEX IF NOT EXISTS usage_by_time ON usage_events (created_at)`,
         ],
         "write",
       )
@@ -304,12 +317,14 @@ export interface NewsletterRow {
   sent_at: string | null;
   updated_at: string;
   list_name: string | null;
+  cost_usd: number | null;
 }
 
 export async function listNewsletters(): Promise<NewsletterRow[]> {
   const c = await db();
   const r = await c.execute(`
-    SELECT n.id, n.status, n.topic, n.title, n.subject, n.recipients, n.sent_at, n.updated_at, l.name AS list_name
+    SELECT n.id, n.status, n.topic, n.title, n.subject, n.recipients, n.sent_at, n.updated_at, l.name AS list_name,
+      (SELECT SUM(cost_usd) FROM usage_events u WHERE u.edition_id = n.id) AS cost_usd
     FROM newsletters n LEFT JOIN lists l ON l.id = n.list_id
     ORDER BY COALESCE(n.sent_at, n.updated_at) DESC LIMIT 200`);
   return r.rows.map((x) => ({
@@ -322,6 +337,7 @@ export async function listNewsletters(): Promise<NewsletterRow[]> {
     sent_at: x.sent_at == null ? null : String(x.sent_at),
     updated_at: String(x.updated_at),
     list_name: x.list_name == null ? null : String(x.list_name),
+    cost_usd: x.cost_usd == null ? null : Number(x.cost_usd),
   }));
 }
 
@@ -420,4 +436,82 @@ export async function checkDb(): Promise<{ ok: true } | { ok: false; error: stri
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+// ---------- Cost meter ----------
+
+export async function insertUsage(e: {
+  editionId: string | null;
+  provider: string;
+  kind: string;
+  model?: string;
+  units: number;
+  unitLabel: string;
+  costUsd: number | null;
+}) {
+  const c = await db();
+  await c.execute({
+    sql: `INSERT INTO usage_events (edition_id, provider, kind, model, units, unit_label, cost_usd)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [e.editionId, e.provider, e.kind, e.model ?? null, e.units, e.unitLabel, e.costUsd],
+  });
+}
+
+export interface UsageLine {
+  provider: string;
+  kind: string;
+  model: string | null;
+  calls: number;
+  units: number;
+  unitLabel: string;
+  costUsd: number;
+  unpriced: number; // calls whose price we don't know
+}
+
+export interface UsageReport {
+  totalUsd: number;
+  calls: number;
+  unpriced: number;
+  lines: UsageLine[];
+}
+
+function toReport(rows: Record<string, unknown>[]): UsageReport {
+  const lines = rows.map((x) => ({
+    provider: String(x.provider),
+    kind: String(x.kind),
+    model: x.model == null ? null : String(x.model),
+    calls: Number(x.calls),
+    units: Number(x.units ?? 0),
+    unitLabel: String(x.unit_label),
+    costUsd: Number(x.cost ?? 0),
+    unpriced: Number(x.unpriced ?? 0),
+  }));
+  return {
+    totalUsd: lines.reduce((a, l) => a + l.costUsd, 0),
+    calls: lines.reduce((a, l) => a + l.calls, 0),
+    unpriced: lines.reduce((a, l) => a + l.unpriced, 0),
+    lines,
+  };
+}
+
+const GROUPED = `SELECT provider, kind, model, unit_label, COUNT(*) AS calls, SUM(units) AS units,
+    SUM(COALESCE(cost_usd, 0)) AS cost, SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced
+  FROM usage_events`;
+
+export async function usageForEdition(editionId: string): Promise<UsageReport> {
+  const c = await db();
+  const r = await c.execute({
+    sql: `${GROUPED} WHERE edition_id = ? GROUP BY provider, kind, model, unit_label ORDER BY cost DESC`,
+    args: [editionId],
+  });
+  return toReport(r.rows as unknown as Record<string, unknown>[]);
+}
+
+/** Spend since the first of this month (UTC). */
+export async function usageThisMonth(): Promise<UsageReport> {
+  const c = await db();
+  const r = await c.execute(
+    `${GROUPED} WHERE created_at >= strftime('%Y-%m-01 00:00:00', 'now') GROUP BY provider, kind, model, unit_label ORDER BY cost DESC`,
+  );
+  return toReport(r.rows as unknown as Record<string, unknown>[]);
 }

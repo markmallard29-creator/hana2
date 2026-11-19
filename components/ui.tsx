@@ -153,10 +153,22 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "error" | 
   );
 }
 
+/** The newsletter being worked on; sent with API calls so the cost meter can attribute spend. */
+let currentEdition: string | null = null;
+export function setCurrentEdition(id: string | null) {
+  currentEdition = id;
+}
+function baseHeaders(json: boolean): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (json) h["content-type"] = "application/json";
+  if (currentEdition) h["x-hana-edition"] = currentEdition;
+  return h;
+}
+
 export async function api<T>(url: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<T> {
   const res = await fetch(url, {
     method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    headers: baseHeaders(body !== undefined),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
@@ -166,7 +178,7 @@ export async function api<T>(url: string, body?: unknown, method = body === unde
 
 /** POST and read a newline-delimited JSON stream: calls onLine for each object, returns the last one. */
 export async function apiStream<T>(url: string, body: unknown, onLine: (o: Record<string, unknown>) => void): Promise<T> {
-  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(url, { method: "POST", headers: baseHeaders(true), body: JSON.stringify(body) });
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
     throw new Error(data.error || `Request failed (${res.status})`);

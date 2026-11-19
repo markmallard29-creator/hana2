@@ -56,6 +56,7 @@ ${
     }`,
     shape: `{"queries": ["...", "...", "...", "...", "..."]}`,
     fast: true,
+    purpose: "plan",
     maxTokens: 400,
   });
   return (r.queries ?? []).filter(Boolean).slice(0, 6);
@@ -136,6 +137,7 @@ Skip listicles, adverts, sponsored posts, job ads, event listings and pages that
 Candidates:
 ${list}`,
     shape: `{"picks": [{"id": "3", "why": "one short phrase on why it earns its place"}]}`,
+    purpose: "rank",
     maxTokens: 1500,
   });
   const byId = new Map(cands.map((c) => [c.id, c]));
@@ -244,6 +246,7 @@ Article text:
 ${(a.content || "").slice(0, MAX_CONTENT_CHARS)}`,
     shape: `{"headline": "...", "summary": "..."}`,
     fast: true,
+    purpose: "summary",
     maxTokens: 600,
   });
   return { headline: cleanTitle(r.headline || a.title), summary: (r.summary || "").trim() };
@@ -282,6 +285,7 @@ Write only these parts: ${parts.join(", ")}.
     ]
       .filter(Boolean)
       .join(", ")}}`,
+    purpose: "compose",
     maxTokens: 2500,
   });
   return {
@@ -298,6 +302,7 @@ export async function refineTopic(topic: string, audience: string) {
     prompt: `Rewrite this newsletter topic as a one-sentence brief (max 30 words) that says what to cover and what to leave out, for the audience "${audience}". Keep the editor's intent and any place names.\n\nTopic: ${topic || "(blank: suggest a topic for this audience)"}`,
     shape: `{"topic": "..."}`,
     fast: true,
+    purpose: "topic",
     maxTokens: 200,
   });
   return cleanTitle(r.topic || topic);

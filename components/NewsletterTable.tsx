@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { NewsletterRow } from "@/lib/db";
 import { api, cx } from "./ui";
+import { formatUsd } from "@/lib/format";
 
 function when(iso: string) {
   const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
@@ -38,6 +39,9 @@ export function NewsletterTable({ rows }: { rows: NewsletterRow[] }) {
             <th className="px-5 py-3 font-medium">Status</th>
             <th className="hidden px-5 py-3 font-medium md:table-cell">List</th>
             <th className="hidden px-5 py-3 font-medium sm:table-cell">Date</th>
+            <th className="hidden px-5 py-3 text-right font-medium lg:table-cell" title="Estimated API cost of researching and writing this edition">
+              API cost
+            </th>
             <th className="px-5 py-3" />
           </tr>
         </thead>
@@ -60,6 +64,9 @@ export function NewsletterTable({ rows }: { rows: NewsletterRow[] }) {
               </td>
               <td className="hidden px-5 py-4 text-gray-600 md:table-cell">{n.list_name ?? "-"}</td>
               <td className="hidden px-5 py-4 text-gray-600 sm:table-cell">{when(n.sent_at ?? n.updated_at)}</td>
+              <td className="hidden px-5 py-4 text-right tabular-nums text-gray-600 lg:table-cell">
+                {n.cost_usd == null ? "-" : formatUsd(n.cost_usd)}
+              </td>
               <td className="px-5 py-4">
                 <div className="flex justify-end gap-1">
                   {n.status === "draft" ? (

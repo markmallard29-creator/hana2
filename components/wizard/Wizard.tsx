@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Stepper } from "../Stepper";
-import { Button, Notice, api, apiStream } from "../ui";
+import { Button, Notice, api, apiStream, setCurrentEdition } from "../ui";
+import { CostMeter } from "./CostMeter";
 import { Footer, type NextBtn } from "./Footer";
 import { DEFAULT_SETTINGS, type Article, type Draft, type SearchOptions, type Settings } from "@/lib/types";
 import { StepTopic } from "./StepTopic";
@@ -31,7 +32,9 @@ const SUMMARY_CONCURRENCY = 3;
 
 export function Wizard({ initial, testEmail, search }: { initial: Draft | null; testEmail: string; search?: SearchOptions }) {
   const [draft, setDraft] = useState<Draft>(() => {
-    const d = initial ?? emptyDraft(search);
+    // Give a new newsletter its id up front, so every API call can be attributed to it.
+    const base = initial ?? emptyDraft(search);
+    const d = base.id ? base : { ...base, id: crypto.randomUUID() };
     // Older drafts (or an engine whose key was removed) fall back to the server default.
     const engine = d.settings.search && search?.available[d.settings.search] ? d.settings.search : search?.default;
     return { ...d, settings: { ...d.settings, search: engine } };
@@ -44,6 +47,11 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
   const lastResearch = useRef<string | null>(initial?.articles.length ? researchKey(initial.settings) : null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  useEffect(() => {
+    setCurrentEdition(draft.id ?? null);
+    return () => setCurrentEdition(null);
+  }, [draft.id]);
 
   const update = useCallback((patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch })), []);
   const setArticles = useCallback(
@@ -61,8 +69,8 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
     if (!d.settings.topic.trim()) return;
     try {
       const { id } = await api<{ id: string }>("/api/newsletters", d);
-      if (!d.id) {
-        setDraft((x) => ({ ...x, id }));
+      if (!d.id) setDraft((x) => ({ ...x, id }));
+      if (!new URLSearchParams(window.location.search).get("id")) {
         window.history.replaceState(null, "", `/new?id=${id}`);
       }
     } catch {
@@ -201,6 +209,12 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
         <Stepper step={step} maxReached={maxReached} onJump={go} />
       </div>
       <div className="mx-auto mt-12 max-w-[1150px] px-6">
+        {draft.id && step > 1 && (
+          <CostMeter
+            editionId={draft.id}
+            refreshKey={`${step}|${phase ?? ""}|${a.filter((x) => x.status === "ready").length}|${a.length}|${draft.title}|${draft.intro.length}|${draft.subject}`}
+          />
+        )}
         {error && (
           <div className="mb-6">
             <Notice tone={step === 2 && a.length ? "warn" : "error"}>

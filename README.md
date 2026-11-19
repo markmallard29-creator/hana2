@@ -99,6 +99,14 @@ Set either `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. If both are set, Claude is u
 
 On step 4 (Preview) and step 5 (Send), **Copy for beehiiv** copies the edition as content-only HTML: the edition bar, intro, "In this edition" summary and articles, all with inline styles. It leaves out HANA's masthead and footer, because each beehiiv publication's template adds its own header, branding and unsubscribe footer. In beehiiv, add an **HTML snippet** block to the post and paste. Set the post title and subject line in beehiiv.
 
+## Cost meter
+
+Every paid call is recorded with its estimated cost and the newsletter it was for: Tavily and Exa searches, Claude and OpenAI requests, and Resend emails.
+- **In the wizard:** "API cost so far" above each step; click it for a breakdown by provider and purpose (plan, rank, summary, compose).
+- **On the dashboard:** an API cost column per newsletter, and API spend this month.
+
+Prices: Tavily uses the credits it reports at $0.008 each (`TAVILY_CREDIT_USD` to change). Exa uses the cost it returns with each response. Claude and OpenAI use token counts × list price; built in for Claude Sonnet/Haiku 5.5 and GPT-6 Luna. Add others with `MODEL_PRICES`, otherwise they show as "unpriced". These are estimates; the providers' dashboards are what you're billed from. Usage is kept even if a newsletter is deleted, so monthly totals stay accurate.
+
 ## Moving your lists over from the old HANA
 
 Export each list as CSV and paste it into **Email lists → Add subscribers**. `email,name` columns, `Name <email>` lines and plain addresses all work. List names must be unique.

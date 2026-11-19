@@ -4,6 +4,8 @@ import { fail, ok, route } from "@/lib/api";
 import { claimForSending, getLists, getSubscribers, markSent, releaseClaim, saveDraft } from "@/lib/db";
 import { renderEmail } from "@/lib/email";
 import type { Draft } from "@/lib/types";
+import { resendEmailUsd } from "@/lib/pricing";
+import { recordUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
 
@@ -59,6 +61,8 @@ export const POST = route(async (req: Request) => {
         replyTo: config.emailReplyTo || undefined,
       });
       if (error) return fail(resendError(error.message), 502);
+      const per = resendEmailUsd();
+      await recordUsage({ provider: "resend", kind: "test email", units: 1, unitLabel: "emails", costUsd: per });
     } else {
       console.log(`[demo send] test to ${to}: ${d.subject}`);
     }
@@ -97,6 +101,8 @@ export const POST = route(async (req: Request) => {
       if (resend) {
         const { error } = await resend.batch.send(emails);
         if (error) throw new Error(resendError(error.message));
+        const per = resendEmailUsd();
+        await recordUsage({ provider: "resend", kind: "email", units: emails.length, unitLabel: "emails", costUsd: per == null ? null : per * emails.length });
       } else {
         console.log(`[demo send] batch of ${emails.length} to "${list.name}"`);
       }

@@ -1,6 +1,8 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { config, llmProvider } from "./config";
+import { tokenCost } from "./pricing";
+import { recordUsage } from "./usage";
 
 let client: Anthropic | null = null;
 function anthropic() {
@@ -31,6 +33,8 @@ export async function askJson<T>(opts: {
   shape: string;
   fast?: boolean;
   maxTokens?: number;
+  /** Label for the cost meter: plan, rank, summary, compose, topic. */
+  purpose?: string;
 }): Promise<T> {
   const messages: Anthropic.MessageParam[] = [
     {
@@ -40,7 +44,7 @@ export async function askJson<T>(opts: {
   ];
   for (let attempt = 0; attempt < 2; attempt++) {
     const system = `${opts.system}\n\n${HOUSE_STYLE}`;
-    const text = await withFallback(system, messages, opts.fast, opts.maxTokens ?? 2000);
+    const text = await withFallback(system, messages, opts.fast, opts.maxTokens ?? 2000, opts.purpose ?? "ai");
     try {
       return extractJson(text) as T;
     } catch (e) {
@@ -61,12 +65,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Call the chosen provider. If it's overloaded even after retries and the other
  * provider has a key, use that instead, so one outage doesn't stop an edition.
  */
-async function withFallback(system: string, messages: Anthropic.MessageParam[], fast: boolean | undefined, maxTokens: number) {
+async function withFallback(
+  system: string,
+  messages: Anthropic.MessageParam[],
+  fast: boolean | undefined,
+  maxTokens: number,
+  purpose: string,
+) {
   const primary = llmProvider;
   const other = primary === "openai" ? (config.anthropicKey ? "anthropic" : null) : config.openaiKey ? "openai" : null;
   const call = (p: "openai" | "anthropic") =>
     // With a backup provider, give up on OpenAI sooner (~4s) and switch.
-    p === "openai" ? openaiText(system, messages, fast, maxTokens, other ? 3 : 5) : anthropicText(system, messages, fast, maxTokens);
+    p === "openai"
+      ? openaiText(system, messages, fast, maxTokens, other ? 3 : 5, purpose)
+      : anthropicText(system, messages, fast, maxTokens, purpose);
   try {
     return await call(primary === "openai" ? "openai" : "anthropic");
   } catch (e) {
@@ -80,12 +92,29 @@ async function withFallback(system: string, messages: Anthropic.MessageParam[], 
   }
 }
 
-async function anthropicText(system: string, messages: Anthropic.MessageParam[], fast: boolean | undefined, maxTokens: number) {
+async function anthropicText(
+  system: string,
+  messages: Anthropic.MessageParam[],
+  fast: boolean | undefined,
+  maxTokens: number,
+  purpose = "ai",
+) {
+  const model = fast ? config.fastModel : config.model;
   const res = await anthropic().messages.create({
-    model: fast ? config.fastModel : config.model,
+    model,
     max_tokens: maxTokens,
     system,
     messages,
+  });
+  const inTok = res.usage?.input_tokens ?? 0;
+  const outTok = res.usage?.output_tokens ?? 0;
+  await recordUsage({
+    provider: "anthropic",
+    kind: purpose,
+    model,
+    units: inTok + outTok,
+    unitLabel: "tokens",
+    costUsd: tokenCost(model, inTok, outTok),
   });
   return res.content
     .map((b) => (b.type === "text" ? b.text : ""))
@@ -100,9 +129,11 @@ async function openaiText(
   fast: boolean | undefined,
   maxTokens: number,
   attempts = 5,
+  purpose = "ai",
 ) {
+  const model = fast ? config.openaiFastModel : config.openaiModel;
   const body = JSON.stringify({
-    model: fast ? config.openaiFastModel : config.openaiModel,
+    model,
     instructions: system,
     input: messages.map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" })),
     // reasoning models spend part of this budget thinking, so leave headroom
@@ -139,9 +170,20 @@ async function openaiText(
   const data = (await res.json().catch(() => ({}))) as {
     error?: { message?: string };
     output_text?: string;
+    usage?: { input_tokens?: number; output_tokens?: number };
     output?: { type?: string; content?: { type?: string; text?: string }[] }[];
   };
   if (!res.ok) throw new Error(`OpenAI ${res.status}: ${data.error?.message ?? "request failed"}`);
+  const inTok = data.usage?.input_tokens ?? 0;
+  const outTok = data.usage?.output_tokens ?? 0;
+  await recordUsage({
+    provider: "openai",
+    kind: purpose,
+    model,
+    units: inTok + outTok,
+    unitLabel: "tokens",
+    costUsd: tokenCost(model, inTok, outTok),
+  });
   if (typeof data.output_text === "string") return data.output_text.trim();
   return (data.output ?? [])
     .flatMap((o) => o.content ?? [])

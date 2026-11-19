@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { getLists, listNewsletters, SetupError } from "@/lib/db";
+import { getLists, listNewsletters, SetupError, usageThisMonth } from "@/lib/db";
+import { formatUsd } from "@/lib/format";
 import { NewsletterTable } from "@/components/NewsletterTable";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  let newsletters: Awaited<ReturnType<typeof listNewsletters>>, lists: Awaited<ReturnType<typeof getLists>>;
+  let newsletters: Awaited<ReturnType<typeof listNewsletters>>,
+    lists: Awaited<ReturnType<typeof getLists>>,
+    month: Awaited<ReturnType<typeof usageThisMonth>>;
   try {
-    [newsletters, lists] = await Promise.all([listNewsletters(), getLists()]);
+    [newsletters, lists, month] = await Promise.all([listNewsletters(), getLists(), usageThisMonth()]);
   } catch (e) {
     if (!(e instanceof SetupError)) throw e;
     return (
@@ -32,6 +35,17 @@ export default async function Dashboard() {
             {sent.length} sent · {newsletters.length - sent.length} draft{newsletters.length - sent.length === 1 ? "" : "s"} ·{" "}
             {subscribers} active subscribers across {lists.length} list{lists.length === 1 ? "" : "s"}
           </p>
+          {month.calls > 0 && (
+            <p className="mt-1 text-sm text-gray-500">
+              API spend this month: <strong className="text-gray-900">{formatUsd(month.totalUsd)}</strong>
+              {sent.length + newsletters.filter((n) => n.status === "draft").length > 0 && (
+                <>
+                  {" "}
+                  · {month.lines.filter((l) => l.provider !== "resend").reduce((a, l) => a + l.calls, 0)} AI and search calls
+                </>
+              )}
+            </p>
+          )}
         </div>
         <Link href="/new" className="inline-flex h-12 items-center rounded-md bg-brand px-6 text-[17px] font-medium text-white hover:bg-brand-dark">
           Create a new newsletter

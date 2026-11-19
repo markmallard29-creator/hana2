@@ -1,6 +1,8 @@
 import "server-only";
 import { config, searchProviderName } from "./config";
 import type { SearchEngine } from "./types";
+import { tavilyCreditUsd } from "./pricing";
+import { recordUsage } from "./usage";
 
 /**
  * Search provider interface. Tavily is the default; swap in Exa (or anything
@@ -48,7 +50,18 @@ async function tavily(path: string, body: Record<string, unknown>) {
     signal: AbortSignal.timeout(45000),
   });
   if (!res.ok) throw new Error(`Tavily ${path} ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return res.json();
+  const data = await res.json();
+  // Tavily reports credits used when include_usage is set; fall back to its published rates.
+  const urls = Array.isArray(body.urls) ? body.urls.length : 0;
+  const credits = Number(data?.usage?.credits) || (path === "/search" ? 2 : 2 * Math.ceil(Math.max(1, urls) / 5));
+  await recordUsage({
+    provider: "tavily",
+    kind: path === "/search" ? "search" : "extract",
+    units: credits,
+    unitLabel: "credits",
+    costUsd: credits * tavilyCreditUsd(),
+  });
+  return data;
 }
 
 export const tavilyProvider: SearchProvider = {
@@ -63,6 +76,7 @@ export const tavilyProvider: SearchProvider = {
       include_published_date: true,
       include_raw_content: "text",
       exclude_domains: EXCLUDE_DOMAINS,
+      include_usage: true,
     });
     return (data.results ?? []).map(
       (r: { url: string; title: string; content: string; raw_content?: string; published_date?: string; score?: number }) => ({
@@ -77,7 +91,7 @@ export const tavilyProvider: SearchProvider = {
   },
   async extract(urls) {
     if (!urls.length) return {};
-    const data = await tavily("/extract", { urls, extract_depth: "advanced", format: "text" });
+    const data = await tavily("/extract", { urls, extract_depth: "advanced", format: "text", include_usage: true });
     const out: Record<string, string> = {};
     for (const r of data.results ?? []) if (r.raw_content) out[r.url] = r.raw_content;
     return out;
@@ -92,7 +106,17 @@ async function exa(path: string, body: Record<string, unknown>) {
     signal: AbortSignal.timeout(45000),
   });
   if (!res.ok) throw new Error(`Exa ${path} ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return res.json();
+  const data = await res.json();
+  // Exa returns its own cost estimate with each response.
+  const cost = data?.costDollars?.total;
+  await recordUsage({
+    provider: "exa",
+    kind: path === "/search" ? "search" : "extract",
+    units: 1,
+    unitLabel: "requests",
+    costUsd: typeof cost === "number" ? cost : null,
+  });
+  return data;
 }
 
 /** Exa: meaning-based search, good at finding features, analysis and long reads. */
