@@ -4,6 +4,9 @@ const env = (k: string) => (process.env[k] ?? "").trim();
 
 export const config = {
   tavilyKey: env("TAVILY_API_KEY"),
+  exaKey: env("EXA_API_KEY"),
+  /** "tavily" | "exa". Default: Tavily if its key is set, otherwise Exa. */
+  searchProvider: env("SEARCH_PROVIDER").toLowerCase(),
   anthropicKey: env("ANTHROPIC_API_KEY"),
   openaiKey: env("OPENAI_API_KEY"),
   openaiModel: env("OPENAI_MODEL") || "gpt-6.2-sol",
@@ -37,7 +40,18 @@ export const llmProvider: "anthropic" | "openai" | null =
           ? "openai"
           : null;
 
+export const searchProviderName: "tavily" | "exa" | null =
+  config.searchProvider === "exa" && config.exaKey
+    ? "exa"
+    : config.searchProvider === "tavily" && config.tavilyKey
+      ? "tavily"
+      : config.tavilyKey
+        ? "tavily"
+        : config.exaKey
+          ? "exa"
+          : null;
+
 /** Demo mode for research/writing: no search key or no AI key, so use sample data. */
-export const demoResearch = !config.tavilyKey || !llmProvider;
+export const demoResearch = !searchProviderName || !llmProvider;
 /** Demo mode for sending: no Resend key, so log instead of sending. */
 export const demoSend = !config.resendKey;

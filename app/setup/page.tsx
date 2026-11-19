@@ -1,5 +1,5 @@
 import { checkDb, onRailway, onRender, onServerless, RENDER_DISK, storageKind } from "@/lib/db";
-import { config, llmProvider } from "@/lib/config";
+import { config, llmProvider, searchProviderName } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +60,14 @@ export default async function Setup() {
           },
         ]
       : []),
-    { name: "TAVILY_API_KEY", ok: has("TAVILY_API_KEY"), need: "for live research", note: has("TAVILY_API_KEY") ? undefined : "Demo articles until set" },
+    {
+      name: "Search (TAVILY_API_KEY or EXA_API_KEY)",
+      ok: !!searchProviderName,
+      need: "for live research",
+      note: searchProviderName
+        ? `Using ${searchProviderName === "exa" ? "Exa" : "Tavily"}${has("TAVILY_API_KEY") && has("EXA_API_KEY") ? " (both keys set; SEARCH_PROVIDER chooses)" : ""}`
+        : "Demo articles until one is set",
+    },
     {
       name: "AI provider (ANTHROPIC_API_KEY or OPENAI_API_KEY)",
       ok: !!llmProvider,

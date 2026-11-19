@@ -1,5 +1,6 @@
 // Simulates Tavily + Anthropic + article pages via a fake fetch, then runs the real pipeline.
-process.env.TAVILY_API_KEY = "tvly-test";
+const SEARCH = process.env.SIM_SEARCH || "tavily";
+if (SEARCH === "exa") process.env.EXA_API_KEY = "exa-test"; else process.env.TAVILY_API_KEY = "tvly-test";
 const PROVIDER = process.env.SIM_PROVIDER || "anthropic";
 if (PROVIDER === "openai") process.env.OPENAI_API_KEY = "sk-openai-test"; else process.env.ANTHROPIC_API_KEY = "sk-test";
 const now = Date.now(), day = 86400_000;
@@ -16,6 +17,7 @@ const hits = [
   { url: "https://www.youtube.com/watch?v=1", title: "Video", d: 1, w: 900, site: "YouTube" },
   { url: "https://www.theguardian.com/uk-news/2026/nov/17/bristol-arena?utm_source=x", title: "Bristol's arena finally gets going", d: 2, w: 3100, site: "The Guardian" },
   { url: "https://www.theguardian.com/uk-news/2026/nov/17/bristol-arena", title: "Bristol's arena finally gets going (dup)", d: 2, w: 3100, site: "The Guardian" },
+  { url: "https://www.ft.com/content/blocked-feature", title: "Bristol's tech cluster comes of age", d: 3, w: 2200, site: "BLOCKED" },
 ];
 const calls: string[] = [];
 globalThis.fetch = (async (input: any, init?: any) => {
@@ -25,6 +27,11 @@ globalThis.fetch = (async (input: any, init?: any) => {
   if (url.includes("api.tavily.com/search")) {
     if (!body.start_date || !body.include_published_date) throw new Error("bad tavily params");
     return Response.json({ results: hits.map((h) => ({ url: h.url, title: h.title, content: "snippet", raw_content: "word ".repeat(h.w), published_date: new Date(now - h.d * day).toISOString(), score: 0.8 })) });
+  }
+  if (url.includes("api.exa.ai/search")) {
+    if (!body.startPublishedDate?.endsWith("Z") || !body.contents?.text) throw new Error("bad exa params");
+    calls.push(`exa:${body.category ?? "any"}`);
+    return Response.json({ results: hits.map((h) => ({ url: h.url, title: h.title, text: "word ".repeat(h.w), publishedDate: new Date(now - h.d * day).toISOString(), image: "https://img.example/exa-" + h.d + ".jpg" })) });
   }
   if (url.includes("api.anthropic.com") || url.includes("api.openai.com")) {
     const isOpenAI = url.includes("api.openai.com");
@@ -41,6 +48,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
     return Response.json({ id: "m", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: "```json\n" + JSON.stringify(out) + "\n```" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } });
   }
   const h = hits.find((x) => x.url.split("?")[0] === url.split("?")[0]);
+  if (h?.site === "BLOCKED") return new Response("Forbidden", { status: 403 });
   if (h) return new Response(page(h.title, h.site, "/img/hero.jpg", new Date(now - h.d * day).toISOString(), h.w), { headers: { "content-type": "text/html" } });
   return new Response("nope", { status: 404 });
 }) as any;
@@ -51,5 +59,5 @@ globalThis.fetch = (async (input: any, init?: any) => {
   for (const a of arts) console.log(`- ${a.title} | ${a.source} | ${a.publishedAt?.slice(0,10)} | ${a.wordCount}w ${a.readMins}min | img=${a.image}`);
   const s = await summarise({ title: "x", source: "y", url: "https://e.com", content: "z" }, { tone: "Professional", audience: "a", topic: "t" });
   console.log("summary headline:", s.headline);
-  console.log("tavily calls:", calls.filter((c) => c.includes("tavily")).length, "| models:", [...new Set(calls.filter((c) => c.startsWith("openai:")))].join(", ") || "anthropic");
+  console.log("search calls:", calls.filter((c) => c.includes("tavily") || c.startsWith("exa:")).map((c) => c.replace(/^https:\/\/api\.tavily\.com\//, "tavily:")).join(" "), "| models:", [...new Set(calls.filter((c) => c.startsWith("openai:")))].join(", ") || "anthropic");
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

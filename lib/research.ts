@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { askJson, cleanTitle } from "./llm";
 import { domainOf, fetchMeta, normaliseDate, sourceFromUrl, wordCount } from "./meta";
 import { EXCLUDE_DOMAINS, searchProvider, type SearchHit } from "./search";
+import { searchProviderName } from "./config";
 import type { Article, Settings } from "./types";
 
 const MAX_CONTENT_CHARS = 14000; // what we keep per article for summarising
@@ -48,7 +49,11 @@ Period: the last ${s.daysBack} day(s).
 Write 5 distinct search queries that together cover this topic for the period.
 - 2 queries should find recent news on the topic.
 - 3 queries should find in-depth pieces: analysis, features, long reads, interviews, research write-ups, explainers.
-- Keep each query short (3-8 words). Include place names if the topic is local. Don't put dates in the queries.`,
+${
+      searchProviderName === "exa"
+        ? `- The search engine matches by meaning, so write each query as a short description of the ideal article, e.g. "an in-depth analysis of how Bristol's housing shortage is affecting young families". Include place names if the topic is local. Don't put dates in the queries.`
+        : `- Keep each query short (3-8 words). Include place names if the topic is local. Don't put dates in the queries.`
+    }`,
     shape: `{"queries": ["...", "...", "...", "...", "..."]}`,
     fast: true,
     maxTokens: 400,
@@ -145,7 +150,10 @@ ${list}`,
 }
 
 /** Turn a candidate into an Article, pulling image / publication / date from the page itself. */
-export async function enrich(url: string, opts: { title?: string; raw?: string | null; publishedAt?: string | null; why?: string; custom?: boolean }) {
+export async function enrich(
+  url: string,
+  opts: { title?: string; raw?: string | null; publishedAt?: string | null; why?: string; custom?: boolean; image?: string | null },
+) {
   const meta = await fetchMeta(url);
   const content = (opts.raw && wordCount(opts.raw) > wordCount(meta.text) * 0.5 ? opts.raw : meta.text || opts.raw || "")
     .slice(0, MAX_CONTENT_CHARS * 3);
@@ -157,7 +165,7 @@ export async function enrich(url: string, opts: { title?: string; raw?: string |
     title,
     source: meta.siteName || sourceFromUrl(url),
     publishedAt: meta.publishedAt || opts.publishedAt || null,
-    image: meta.image,
+    image: meta.image ?? opts.image ?? null,
     wordCount: words,
     readMins: Math.max(1, Math.round(words / 230)),
     summary: "",
@@ -188,7 +196,9 @@ export async function research(
   for (let i = 0; i < ranked.length && out.length < want; i += 4) {
     const batch = ranked.slice(i, i + 4);
     const arts = await Promise.all(
-      batch.map(({ c, why }) => enrich(c.url, { title: c.title, raw: c.rawContent, publishedAt: c.publishedAt, why })),
+      batch.map(({ c, why }) =>
+        enrich(c.url, { title: c.title, raw: c.rawContent, publishedAt: c.publishedAt, why, image: c.image }),
+      ),
     );
     for (const a of arts) {
       if (out.length >= want) break;
