@@ -19,6 +19,16 @@ export interface EmailInput {
   senderAddress?: string;
 }
 
+/**
+ * Content only, for pasting into Beehiiv (or sending through its API): no <html>/<head>,
+ * no masthead and no footer, because the Beehiiv template supplies its own header,
+ * branding and unsubscribe footer. Inline styles only, since Beehiiv strips <style> tags.
+ */
+export function renderFragment(e: EmailInput): string {
+  const rows = contentRows(e, 24);
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;">${rows}</table>`;
+}
+
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -51,46 +61,7 @@ export function renderEmail(e: EmailInput): string {
   const preheader = e.preheader || e.execSummary[0]?.text || e.intro.slice(0, 120);
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-  const bar = t.barBg
-    ? `<tr><td style="background:${t.barBg};color:${t.barText};padding:10px 40px;font:600 13px/1.4 ${FONT};letter-spacing:.04em;text-transform:uppercase;">
-        ${esc(e.editionLabel || "")}${e.editionLabel ? " &nbsp;·&nbsp; " : ""}${esc(today)}
-      </td></tr>`
-    : e.editionLabel
-      ? `<tr><td style="padding:16px 40px 0;font:600 12px/1.4 ${FONT};color:${MUTED};letter-spacing:.04em;text-transform:uppercase;">${esc(e.editionLabel)} &nbsp;·&nbsp; ${esc(today)}</td></tr>`
-      : "";
-
-  const intro = e.intro.trim()
-    ? `<tr><td style="padding:28px 40px 4px;">${paras(e.intro, `margin:0 0 14px;font:16px/1.6 ${FONT};color:${TEXT};`)}</td></tr>`
-    : "";
-
-  const exec = e.execSummary.length
-    ? `<tr><td style="padding:24px 40px 8px;">
-        <p style="margin:0 0 12px;font:700 13px/1.4 ${FONT};color:${t.accent};letter-spacing:.06em;text-transform:uppercase;">In this edition</p>
-        ${e.execSummary
-          .map(
-            (x) =>
-              `<p style="margin:0 0 12px;font:15px/1.55 ${FONT};color:${TEXT};"><strong style="color:#111827;">${esc(x.heading)}</strong>: ${esc(x.text)}</p>`,
-          )
-          .join("")}
-      </td></tr>
-      <tr><td style="padding:8px 40px;"><div style="border-top:1px solid #E5E7EB;"></div></td></tr>`
-    : "";
-
-  const articles = e.articles
-    .map((a) => {
-      const meta = [a.source, fmtDate(a.publishedAt)].filter(Boolean).map(esc).join(" &nbsp;·&nbsp; ");
-      const img = a.image
-        ? `<a href="${esc(a.url)}" style="text-decoration:none;"><img src="${esc(a.image)}" width="520" alt="" style="display:block;width:100%;max-width:520px;height:auto;border:0;border-radius:8px;margin:0 0 16px;"></a>`
-        : "";
-      return `<tr><td style="padding:24px 40px 20px;">
-        ${img}
-        <p style="margin:0 0 6px;font:12px/1.4 ${FONT};color:${MUTED};letter-spacing:.02em;">${meta}</p>
-        <h2 style="margin:0 0 10px;font:700 20px/1.35 ${FONT};color:#111827;"><a href="${esc(a.url)}" style="color:#111827;text-decoration:none;">${esc(a.title)}</a></h2>
-        ${paras(a.summary, `margin:0 0 12px;font:15px/1.6 ${FONT};color:${TEXT};`)}
-        <p style="margin:0;font:600 14px/1.4 ${FONT};"><a href="${esc(a.url)}" style="color:${t.accent};text-decoration:none;">Read more at ${esc(a.source)} (${a.readMins} min read) &rarr;</a></p>
-      </td></tr>`;
-    })
-    .join(`<tr><td style="padding:0 40px;"><div style="border-top:1px solid #F3F4F6;"></div></td></tr>`);
+  const { bar, intro, exec, articles } = sections(e, 40);
 
   const footerBits = [
     e.listName ? `You're receiving this because you're subscribed to ${esc(e.listName)}.` : "",
@@ -138,4 +109,56 @@ export function renderEmail(e: EmailInput): string {
 </table>
 </body>
 </html>`;
+}
+
+function sections(e: EmailInput, px: number) {
+  const t = themeById(e.themeId);
+  const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const bar = t.barBg
+    ? `<tr><td style="background:${t.barBg};color:${t.barText};padding:10px ${px}px;font:600 13px/1.4 ${FONT};letter-spacing:.04em;text-transform:uppercase;">
+        ${esc(e.editionLabel || "")}${e.editionLabel ? " &nbsp;·&nbsp; " : ""}${esc(today)}
+      </td></tr>`
+    : e.editionLabel
+      ? `<tr><td style="padding:16px ${px}px 0;font:600 12px/1.4 ${FONT};color:${MUTED};letter-spacing:.04em;text-transform:uppercase;">${esc(e.editionLabel)} &nbsp;·&nbsp; ${esc(today)}</td></tr>`
+      : "";
+
+  const intro = e.intro.trim()
+    ? `<tr><td style="padding:28px ${px}px 4px;">${paras(e.intro, `margin:0 0 14px;font:16px/1.6 ${FONT};color:${TEXT};`)}</td></tr>`
+    : "";
+
+  const exec = e.execSummary.length
+    ? `<tr><td style="padding:24px ${px}px 8px;">
+        <p style="margin:0 0 12px;font:700 13px/1.4 ${FONT};color:${t.accent};letter-spacing:.06em;text-transform:uppercase;">In this edition</p>
+        ${e.execSummary
+          .map(
+            (x) =>
+              `<p style="margin:0 0 12px;font:15px/1.55 ${FONT};color:${TEXT};"><strong style="color:#111827;">${esc(x.heading)}</strong>: ${esc(x.text)}</p>`,
+          )
+          .join("")}
+      </td></tr>
+      <tr><td style="padding:8px ${px}px;"><div style="border-top:1px solid #E5E7EB;"></div></td></tr>`
+    : "";
+
+  const articles = e.articles
+    .map((a) => {
+      const meta = [a.source, fmtDate(a.publishedAt)].filter(Boolean).map(esc).join(" &nbsp;·&nbsp; ");
+      const img = a.image
+        ? `<a href="${esc(a.url)}" style="text-decoration:none;"><img src="${esc(a.image)}" width="520" alt="" style="display:block;width:100%;max-width:520px;height:auto;border:0;border-radius:8px;margin:0 0 16px;"></a>`
+        : "";
+      return `<tr><td style="padding:24px ${px}px 20px;">
+        ${img}
+        <p style="margin:0 0 6px;font:12px/1.4 ${FONT};color:${MUTED};letter-spacing:.02em;">${meta}</p>
+        <h2 style="margin:0 0 10px;font:700 20px/1.35 ${FONT};color:#111827;"><a href="${esc(a.url)}" style="color:#111827;text-decoration:none;">${esc(a.title)}</a></h2>
+        ${paras(a.summary, `margin:0 0 12px;font:15px/1.6 ${FONT};color:${TEXT};`)}
+        <p style="margin:0;font:600 14px/1.4 ${FONT};"><a href="${esc(a.url)}" style="color:${t.accent};text-decoration:none;">Read more at ${esc(a.source)} (${a.readMins} min read) &rarr;</a></p>
+      </td></tr>`;
+    })
+    .join(`<tr><td style="padding:0 ${px}px;"><div style="border-top:1px solid #F3F4F6;"></div></td></tr>`);
+
+  return { bar, intro, exec, articles };
+}
+
+function contentRows(e: EmailInput, px: number) {
+  const { bar, intro, exec, articles } = sections(e, px);
+  return `${bar}${intro}${exec}${articles}`;
 }

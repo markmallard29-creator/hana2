@@ -95,6 +95,10 @@ Set either `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. If both are set, Claude is u
 
 /setup shows which provider and models are active.
 
+## Publishing through beehiiv
+
+On step 4 (Preview) and step 5 (Send), **Copy for beehiiv** copies the edition as content-only HTML: the edition bar, intro, "In this edition" summary and articles, all with inline styles. It leaves out HANA's masthead and footer, because each beehiiv publication's template adds its own header, branding and unsubscribe footer. In beehiiv, add an **HTML snippet** block to the post and paste. Set the post title and subject line in beehiiv.
+
 ## Moving your lists over from the old HANA
 
 Export each list as CSV and paste it into **Email lists → Add subscribers**. `email,name` columns, `Name <email>` lines and plain addresses all work. List names must be unique.

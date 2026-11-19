@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Draft } from "@/lib/types";
 import { Button, Card, Input, Label, Notice, Select, api } from "../ui";
 import { Footer } from "./Footer";
+import { CopyForBeehiiv } from "./CopyForBeehiiv";
 import { describeAdd, type AddResult } from "../ListsManager";
 
 interface List {
@@ -220,6 +221,12 @@ export function StepSend({
       </div>
 
       <Card className="mt-10 p-6">
+        <h3 className="font-semibold">Publishing through beehiiv?</h3>
+        <p className="mb-4 mt-1 text-sm text-gray-500">Copy the edition and paste it into a beehiiv post instead of sending from HANA.</p>
+        <CopyForBeehiiv draft={draft} withHint />
+      </Card>
+
+      <Card className="mt-6 p-6">
         <h3 className="font-semibold">Send a test first</h3>
         <p className="mt-1 text-sm text-gray-500">
           A copy marked [TEST] goes to this address. Nothing goes to your list.

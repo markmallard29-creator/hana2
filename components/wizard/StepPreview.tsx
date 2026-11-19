@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { renderEmail } from "@/lib/email";
 import type { Draft } from "@/lib/types";
 import { Button, Card, cx } from "../ui";
+import { CopyForBeehiiv } from "./CopyForBeehiiv";
 
 const DEVICES = { Desktop: 680, Tablet: 768, Mobile: 375 } as const;
 type Device = keyof typeof DEVICES;
@@ -45,15 +46,17 @@ export function StepPreview({ draft }: { draft: Draft }) {
   return (
     <div>
       <h2 className="text-[19px] font-medium">Review your newsletter</h2>
-      <Segmented
-        className="mt-2"
-        value={tab}
-        options={[
-          ["preview", "Preview"],
-          ["code", "Code"],
-        ]}
-        onChange={(v) => setTab(v as "preview" | "code")}
-      />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <Segmented
+          value={tab}
+          options={[
+            ["preview", "Preview"],
+            ["code", "Code"],
+          ]}
+          onChange={(v) => setTab(v as "preview" | "code")}
+        />
+        <CopyForBeehiiv draft={draft} size="sm" />
+      </div>
 
       <Card className="mt-3 p-8">
         {tab === "preview" ? (
