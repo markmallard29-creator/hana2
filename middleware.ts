@@ -5,7 +5,7 @@ import { authToken } from "@/lib/auth";
  * Single-password gate. Set APP_PASSWORD to turn it on.
  * Public routes: login, unsubscribe, the browser view of sent newsletters.
  */
-const PUBLIC = [/^\/login/, /^\/api\/login/, /^\/api\/health/, /^\/unsubscribe\//, /^\/api\/unsubscribe/, /^\/view\//];
+const PUBLIC = [/^\/login/, /^\/api\/login/, /^\/api\/health/, /^\/api\/cron/, /^\/unsubscribe\//, /^\/api\/unsubscribe/, /^\/view\//];
 
 export async function middleware(req: NextRequest) {
   const password = process.env.APP_PASSWORD;

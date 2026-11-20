@@ -114,6 +114,18 @@ Every paid call is recorded with its estimated cost and the newsletter it was fo
 
 Prices: Tavily uses the credits it reports at $0.008 each (`TAVILY_CREDIT_USD` to change). Exa uses the cost it returns with each response. Claude and OpenAI use token counts × list price; built in for Claude Sonnet/Haiku 5.5 and GPT-6 Luna. Add others with `MODEL_PRICES`, otherwise they show as "unpriced". These are estimates; the providers' dashboards are what you're billed from. Usage is kept even if a newsletter is deleted, so monthly totals stay accurate.
 
+## Schedules
+
+**Schedules** (in the header) makes HANA research, write and email you a fresh edition on a timetable: every day, every weekday, or weekly on a chosen day, at a set UK time. Clock changes are handled. Start one from scratch, or from any newsletter's clock icon on the dashboard to reuse its settings.
+
+- **It only ever emails the schedule's recipient (you), never a list.** The email has an "Open in HANA" link, and the edition is saved as a draft (marked "Auto" on the dashboard), so you can edit it, copy it into beehiiv or send it on.
+- **If fewer than 3 good articles turn up,** you get a short "no edition this time" note instead. If research fails, you get a "failed" note, and it tries again at the next scheduled time.
+- **Run now** sends an edition straight away without changing the timetable. **Pause** and **Resume** are on the same row.
+- **How it runs:** the server checks for due schedules every minute itself (Render Starter is always on, so there's nothing extra to set up). A run that was due while the server was restarting runs once straight after. Each run is locked, so it can't run twice at once.
+- **Optional backup trigger:** set `CRON_SECRET` (at least 16 characters) and have an external cron, such as a Render Cron Job or cron-job.org, call `POST https://<your-site>/api/cron` with the header `Authorization: Bearer <CRON_SECRET>`.
+- **Cost:** each run is recorded in the cost meter like a manual edition.
+- **To turn the timer off,** set `DISABLE_SCHEDULER=1`.
+
 ## Moving your lists over from the old HANA
 
 Export each list as CSV and paste it into **Email lists → Add subscribers**. `email,name` columns, `Name <email>` lines and plain addresses all work. List names must be unique.

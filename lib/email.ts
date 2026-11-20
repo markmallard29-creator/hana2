@@ -17,6 +17,8 @@ export interface EmailInput {
   webUrl?: string;
   listName?: string;
   senderAddress?: string;
+  /** A short note above the masthead, e.g. "Your scheduled edition · Open in HANA". Not in Beehiiv copies. */
+  notice?: { text: string; href?: string; linkText?: string };
 }
 
 /**
@@ -94,6 +96,15 @@ export function renderEmail(e: EmailInput): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;">
   <tr><td align="center" style="padding:24px 12px;">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#FFFFFF;border:1px solid #E5E7EB;">
+      ${
+        e.notice
+          ? `<tr><td style="padding:12px 40px;background:#F9FAFB;border-bottom:1px solid #E5E7EB;font:13px/1.5 ${FONT};color:${MUTED};">${esc(e.notice.text)}${
+              e.notice.href
+                ? ` <a href="${esc(e.notice.href)}" style="color:${t.accent};font-weight:600;">${esc(e.notice.linkText || "Open")}</a>`
+                : ""
+            }</td></tr>`
+          : ""
+      }
       <tr><td style="background:${t.headerBg};padding:36px 40px;">
         <h1 style="margin:0;font:800 32px/1.15 ${FONT};color:${t.headerText};">${esc(e.title)}</h1>
       </td></tr>

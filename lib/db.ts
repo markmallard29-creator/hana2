@@ -133,6 +133,22 @@ async function db() {
             cost_usd REAL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
           )`,
+          `CREATE TABLE IF NOT EXISTS schedules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            recipe TEXT NOT NULL,
+            cadence TEXT NOT NULL,
+            recipient TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            next_run_at TEXT,
+            last_run_at TEXT,
+            last_status TEXT,
+            last_message TEXT,
+            last_newsletter_id TEXT,
+            running_since TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )`,
           `CREATE INDEX IF NOT EXISTS usage_by_edition ON usage_events (edition_id)`,
           `CREATE INDEX IF NOT EXISTS usage_by_time ON usage_events (created_at)`,
         ],
@@ -320,6 +336,7 @@ export interface NewsletterRow {
   cost_usd: number | null;
   step: number | null;
   article_count: number;
+  schedule_name: string | null;
 }
 
 export async function listNewsletters(): Promise<NewsletterRow[]> {
@@ -328,7 +345,8 @@ export async function listNewsletters(): Promise<NewsletterRow[]> {
     SELECT n.id, n.status, n.topic, n.title, n.subject, n.recipients, n.sent_at, n.updated_at, l.name AS list_name,
       (SELECT SUM(cost_usd) FROM usage_events u WHERE u.edition_id = n.id) AS cost_usd,
       json_extract(n.data, '$.step') AS step,
-      json_array_length(n.data, '$.articles') AS article_count
+      json_array_length(n.data, '$.articles') AS article_count,
+      json_extract(n.data, '$.scheduleName') AS schedule_name
     FROM newsletters n LEFT JOIN lists l ON l.id = n.list_id
     ORDER BY COALESCE(n.sent_at, n.updated_at) DESC LIMIT 200`);
   return r.rows.map((x) => ({
@@ -344,6 +362,7 @@ export async function listNewsletters(): Promise<NewsletterRow[]> {
     cost_usd: x.cost_usd == null ? null : Number(x.cost_usd),
     step: x.step == null ? null : Number(x.step),
     article_count: Number(x.article_count ?? 0),
+    schedule_name: x.schedule_name == null ? null : String(x.schedule_name),
   }));
 }
 
@@ -523,4 +542,122 @@ export async function usageThisMonth(): Promise<UsageReport> {
     `${GROUPED} WHERE created_at >= strftime('%Y-%m-01 00:00:00', 'now') GROUP BY provider, kind, model, unit_label ORDER BY cost DESC`,
   );
   return toReport(r.rows as unknown as Record<string, unknown>[]);
+}
+
+// ---------- Schedules ----------
+// Times are stored as ISO strings ("2026-11-23T07:00:00.000Z") so they compare correctly as text.
+
+export interface Recipe {
+  settings: Draft["settings"];
+  themeId: string;
+  editionLabel: string;
+}
+
+export interface ScheduleRow {
+  id: string;
+  name: string;
+  recipe: Recipe;
+  cadence: import("./cadence").Cadence;
+  recipient: string;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: "sent" | "skipped" | "failed" | null;
+  last_message: string | null;
+  last_newsletter_id: string | null;
+  running_since: string | null;
+}
+
+function toSchedule(x: Record<string, unknown>): ScheduleRow {
+  return {
+    id: String(x.id),
+    name: String(x.name),
+    recipe: JSON.parse(String(x.recipe)),
+    cadence: JSON.parse(String(x.cadence)),
+    recipient: String(x.recipient),
+    enabled: Number(x.enabled) === 1,
+    next_run_at: x.next_run_at == null ? null : String(x.next_run_at),
+    last_run_at: x.last_run_at == null ? null : String(x.last_run_at),
+    last_status: x.last_status == null ? null : (String(x.last_status) as ScheduleRow["last_status"]),
+    last_message: x.last_message == null ? null : String(x.last_message),
+    last_newsletter_id: x.last_newsletter_id == null ? null : String(x.last_newsletter_id),
+    running_since: x.running_since == null ? null : String(x.running_since),
+  };
+}
+
+export async function listSchedules(): Promise<ScheduleRow[]> {
+  const c = await db();
+  const r = await c.execute("SELECT * FROM schedules ORDER BY created_at");
+  return r.rows.map((x) => toSchedule(x as unknown as Record<string, unknown>));
+}
+
+export async function getSchedule(id: string) {
+  const c = await db();
+  const r = await c.execute({ sql: "SELECT * FROM schedules WHERE id = ?", args: [id] });
+  return r.rows[0] ? toSchedule(r.rows[0] as unknown as Record<string, unknown>) : null;
+}
+
+export async function saveSchedule(s: {
+  id?: string;
+  name: string;
+  recipe: Recipe;
+  cadence: import("./cadence").Cadence;
+  recipient: string;
+  enabled: boolean;
+  next_run_at: string | null;
+}) {
+  const c = await db();
+  const id = s.id || randomUUID();
+  await c.execute({
+    sql: `INSERT INTO schedules (id, name, recipe, cadence, recipient, enabled, next_run_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET name = excluded.name, recipe = excluded.recipe, cadence = excluded.cadence,
+            recipient = excluded.recipient, enabled = excluded.enabled, next_run_at = excluded.next_run_at,
+            updated_at = datetime('now')`,
+    args: [id, s.name, JSON.stringify(s.recipe), JSON.stringify(s.cadence), s.recipient, s.enabled ? 1 : 0, s.next_run_at],
+  });
+  return id;
+}
+
+export async function deleteSchedule(id: string) {
+  const c = await db();
+  await c.execute({ sql: "DELETE FROM schedules WHERE id = ?", args: [id] });
+}
+
+/** A run counts as stuck (and can be retried) after this long. */
+const STALE_MS = 20 * 60_000;
+
+/** Atomically mark a schedule as running. Returns false if it's already running. */
+export async function claimSchedule(id: string, nowIso: string, dueOnly: boolean) {
+  const c = await db();
+  const stale = new Date(new Date(nowIso).getTime() - STALE_MS).toISOString();
+  const r = await c.execute({
+    sql: `UPDATE schedules SET running_since = ?
+          WHERE id = ? AND (running_since IS NULL OR running_since < ?)
+          ${dueOnly ? "AND enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?" : ""}`,
+    args: dueOnly ? [nowIso, id, stale, nowIso] : [nowIso, id, stale],
+  });
+  return r.rowsAffected === 1;
+}
+
+export async function dueScheduleIds(nowIso: string) {
+  const c = await db();
+  const r = await c.execute({
+    sql: "SELECT id FROM schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at",
+    args: [nowIso],
+  });
+  return r.rows.map((x) => String(x.id));
+}
+
+export async function finishScheduleRun(
+  id: string,
+  r: { status: "sent" | "skipped" | "failed"; message: string; newsletterId: string | null; nextRunAt: string | null; ranAt: string },
+) {
+  const c = await db();
+  await c.execute({
+    sql: `UPDATE schedules SET running_since = NULL, last_run_at = ?, last_status = ?, last_message = ?,
+            last_newsletter_id = COALESCE(?, last_newsletter_id), next_run_at = COALESCE(?, next_run_at)
+          WHERE id = ?`,
+    args: [r.ranAt, r.status, r.message, r.newsletterId, r.nextRunAt, id],
+  });
 }

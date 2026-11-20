@@ -109,6 +109,9 @@ export interface Draft {
   listId: string | null;
   /** Wizard step the editor was on when last saved (1-5), so "Continue editing" resumes there. */
   step?: number;
+  /** Set on editions made by a schedule. */
+  scheduleId?: string;
+  scheduleName?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

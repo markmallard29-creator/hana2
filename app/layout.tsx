@@ -29,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/lists" className="rounded-md px-3 py-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900">
                 Email lists
               </Link>
+              <Link href="/schedules" className="rounded-md px-3 py-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900">
+                Schedules
+              </Link>
               <Link href="/new" className="ml-2 rounded-md bg-brand px-4 py-2 font-medium text-white hover:bg-brand-dark">
                 New newsletter
               </Link>

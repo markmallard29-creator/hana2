@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { CalendarClock, Copy, ExternalLink, Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { NewsletterRow } from "@/lib/db";
@@ -70,7 +70,9 @@ export function NewsletterTable({ rows }: { rows: NewsletterRow[] }) {
                   {n.status === "sent"
                     ? `Sent to ${n.recipients ?? 0}`
                     : n.status === "draft"
-                      ? `Draft${n.step && n.article_count ? ` · step ${n.step} of 5` : ""}`
+                      ? n.schedule_name
+                        ? `Auto · ${n.schedule_name}`
+                        : `Draft${n.step && n.article_count ? ` · step ${n.step} of 5` : ""}`
                       : "Sending"}
                 </span>
               </td>
@@ -87,6 +89,7 @@ export function NewsletterTable({ rows }: { rows: NewsletterRow[] }) {
                     <IconLink href={`/view/${n.id}`} label="View" icon={<ExternalLink className="h-4 w-4" />} external />
                   )}
                   <IconBtn label="New edition with these settings" onClick={() => reuse(n.id)} icon={<Copy className="h-4 w-4" />} />
+                  <IconLink href={`/schedules?from=${n.id}`} label="Schedule this (auto-generate and email it to you)" icon={<CalendarClock className="h-4 w-4" />} />
                   <IconBtn label="Delete" onClick={() => remove(n)} icon={<Trash2 className="h-4 w-4" />} danger />
                 </div>
               </td>
