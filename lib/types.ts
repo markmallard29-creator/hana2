@@ -11,6 +11,16 @@ export interface SearchOptions {
   demo: boolean;
 }
 
+/** Where the readers are: localises search and disambiguates place names. */
+export const REGIONS: { name: string; tavily: string | null; iso: string | null }[] = [
+  { name: "United Kingdom", tavily: "united kingdom", iso: "GB" },
+  { name: "Ireland", tavily: "ireland", iso: "IE" },
+  { name: "United States", tavily: "united states", iso: "US" },
+  { name: "Canada", tavily: "canada", iso: "CA" },
+  { name: "Australia", tavily: "australia", iso: "AU" },
+  { name: "Anywhere", tavily: null, iso: null },
+];
+
 export type Tone = "Professional" | "Casual" | "Technical" | "Conversational";
 export const TONES: Tone[] = ["Professional", "Casual", "Technical", "Conversational"];
 
@@ -23,6 +33,10 @@ export interface Settings {
   audience: string;
   /** Research engine for this newsletter. Missing = the server default. */
   search?: SearchEngine;
+  /** Readers' country (a REGIONS name). Missing = United Kingdom. */
+  region?: string;
+  /** Favourite sources, one domain per line: searched first, not exclusively. */
+  sources?: string;
 }
 
 export interface Article {
@@ -104,4 +118,6 @@ export const DEFAULT_SETTINGS: Settings = {
   customUrls: "",
   tone: "Professional",
   audience: "business professionals",
+  region: "United Kingdom",
+  sources: "",
 };

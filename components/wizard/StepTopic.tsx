@@ -2,7 +2,7 @@
 
 import { Wand2 } from "lucide-react";
 import { useState } from "react";
-import { SEARCH_ENGINES, TONES, type SearchOptions, type Settings, type Tone } from "@/lib/types";
+import { REGIONS, SEARCH_ENGINES, TONES, type SearchOptions, type Settings, type Tone } from "@/lib/types";
 import { Input, Label, Select, Slider, Textarea, api, cx } from "../ui";
 
 const PRESETS = ["AI News", "Cybersecurity", "Stem cell research"];
@@ -151,6 +151,34 @@ export function StepTopic({
       <div>
         <Label htmlFor="aud">Target Audience</Label>
         <Input id="aud" value={s.audience} onChange={(e) => onChange({ audience: e.target.value })} />
+      </div>
+
+      <div>
+        <Label htmlFor="region">Readers&apos; region</Label>
+        <Select id="region" value={s.region ?? "United Kingdom"} onChange={(e) => onChange({ region: e.target.value })}>
+          {REGIONS.map((r) => (
+            <option key={r.name}>{r.name}</option>
+          ))}
+        </Select>
+        <p className="mt-2 text-sm text-gray-500">
+          Focuses the search on this country and tells HANA which place you mean, e.g. Bristol, England, not Bristol, Connecticut.
+        </p>
+      </div>
+
+      <div>
+        <Label htmlFor="sources">
+          Favourite sources <span className="font-normal text-gray-400">(optional)</span>
+        </Label>
+        <Textarea
+          id="sources"
+          rows={2}
+          value={s.sources ?? ""}
+          placeholder={"bristolpost.co.uk\nbristol247.com\nbbc.co.uk"}
+          onChange={(e) => onChange({ sources: e.target.value })}
+        />
+        <p className="mt-2 text-sm text-gray-500">
+          One website per line. HANA looks there first but still searches everywhere else.
+        </p>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+export {};
 // Simulates OpenAI overloads: recovers after retries, falls back to Claude, or fails cleanly.
 const MODE = process.env.SIM_MODE || "recover"; // recover | fallback | down
 process.env.OPENAI_API_KEY = "sk-openai-test";

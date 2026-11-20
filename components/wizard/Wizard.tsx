@@ -27,7 +27,8 @@ export function emptyDraft(search?: SearchOptions): Draft {
   };
 }
 
-const researchKey = (s: Settings) => JSON.stringify([s.topic.trim(), s.numArticles, s.daysBack, s.customUrls.trim(), s.search ?? ""]);
+const researchKey = (s: Settings) =>
+  JSON.stringify([s.topic.trim(), s.numArticles, s.daysBack, s.customUrls.trim(), s.search ?? "", s.region ?? "", (s.sources ?? "").trim()]);
 const SUMMARY_CONCURRENCY = 3;
 
 export function Wizard({ initial, testEmail, search }: { initial: Draft | null; testEmail: string; search?: SearchOptions }) {

@@ -1,3 +1,4 @@
+export {};
 // Simulates Tavily + Anthropic + article pages via a fake fetch, then runs the real pipeline.
 const SEARCH = process.env.SIM_SEARCH || "tavily";
 process.env.DATABASE_URL = process.env.DATABASE_URL || `file:/tmp/hana-sim-${Date.now()}.db`;

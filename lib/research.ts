@@ -4,7 +4,7 @@ import { askJson, cleanTitle } from "./llm";
 import { domainOf, fetchMeta, normaliseDate, sourceFromUrl, wordCount } from "./meta";
 import { EXCLUDE_DOMAINS, providerFor, type SearchHit } from "./search";
 import { resolveSearch } from "./config";
-import type { Article, SearchEngine, Settings } from "./types";
+import { REGIONS, type Article, type SearchEngine, type Settings } from "./types";
 
 const MAX_CONTENT_CHARS = 14000; // what we keep per article for summarising
 const MIN_WORDS = 250; // below this it's a stub, a paywall teaser or a listing page
@@ -39,16 +39,34 @@ function canonical(url: string) {
   }
 }
 
+export function regionOf(s: Settings) {
+  return REGIONS.find((r) => r.name === (s.region || "United Kingdom")) ?? REGIONS[0];
+}
+
+/** "bristolpost.co.uk", "https://www.bbc.co.uk/news/..." → bare domains. */
+export function sourceDomains(s: Settings): string[] {
+  return [
+    ...new Set(
+      (s.sources ?? "")
+        .split(/[\s,]+/)
+        .map((x) => x.trim().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase())
+        .filter((x) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(x)),
+    ),
+  ];
+}
+
 export async function planQueries(s: Settings, engine: SearchEngine | null = resolveSearch(s.search)): Promise<string[]> {
   const r = await askJson<{ queries: string[] }>({
     system: "You plan web searches for a newsletter editor who wants thoughtful, substantive reading.",
     prompt: `Newsletter topic: ${s.topic}
 Audience: ${s.audience}
+Readers are in: ${regionOf(s).name === "Anywhere" ? "no particular country" : regionOf(s).name}
 Period: the last ${s.daysBack} day(s).
 
 Write 5 distinct search queries that together cover this topic for the period.
 - 2 queries should find recent news on the topic.
 - 3 queries should find in-depth pieces: analysis, features, long reads, interviews, research write-ups, explainers.
+- If the topic names a place, make every query unambiguous about which one, using the readers' country: e.g. "Bristol England" or "Bristol city council" rather than just "Bristol" (there are Bristols in Connecticut, Tennessee and elsewhere). Never write a query that could match a same-named place abroad.
 ${
       engine === "exa"
         ? `- The search engine matches by meaning, so write each query as a short description of the ideal article, e.g. "an in-depth analysis of how Bristol's housing shortage is affecting young families". Include place names if the topic is local. Don't put dates in the queries.`
@@ -72,6 +90,8 @@ export type Progress = (msg: string) => void;
 export async function gatherCandidates(s: Settings, excludeUrls: string[] = [], progress: Progress = () => {}): Promise<Candidate[]> {
   const engine = resolveSearch(s.search);
   const provider = providerFor(engine);
+  const region = regionOf(s);
+  const domains = sourceDomains(s);
   progress("Planning searches…");
   const queries = await planQueries(s, engine);
   progress(`Searching the web with ${engine === "exa" ? "Exa" : "Tavily"} (${queries.length} searches)…`);
@@ -81,7 +101,13 @@ export async function gatherCandidates(s: Settings, excludeUrls: string[] = [], 
   const endDate = isoDay(end);
 
   const results = await Promise.allSettled(
-    queries.map((query, i) => provider.search({ query, startDate, endDate, news: i < 2, max: 12 })),
+    [
+      ...queries.map((query, i) => provider.search({ query, startDate, endDate, news: i < 2, max: 12, region, domains })),
+      // Exa can't "prefer" domains, so add one search limited to the favourite sources.
+      ...(engine === "exa" && domains.length
+        ? [provider.search({ query: queries[2] ?? queries[0], startDate, endDate, news: false, max: 12, region, domains, onlyDomains: true })]
+        : []),
+    ],
   );
   const failures = results.filter((r) => r.status === "rejected");
   if (failures.length === results.length) {
@@ -113,39 +139,49 @@ export async function gatherCandidates(s: Settings, excludeUrls: string[] = [], 
 }
 
 export async function rankCandidates(s: Settings, cands: Candidate[], want: number) {
-  if (cands.length <= want) return cands.map((c) => ({ c, why: "" }));
+  // Always rank, even with few candidates: this is also where wrong-place results are thrown out.
+  if (!cands.length) return [];
+  const region = regionOf(s);
+  const domains = sourceDomains(s);
   const list = cands
     .map(
       (c) =>
-        `[${c.id}] ${c.title}\n    source: ${sourceFromUrl(c.url)} | date: ${c.publishedAt?.slice(0, 10) ?? "unknown"} | words: ${c.words || "unknown"}\n    ${c.snippet.replace(/\s+/g, " ").slice(0, 280)}`,
+        `[${c.id}] ${c.title}\n    source: ${sourceFromUrl(c.url)} (${domainOf(c.url)}) | date: ${c.publishedAt?.slice(0, 10) ?? "unknown"} | words: ${c.words || "unknown"}\n    ${c.snippet.replace(/\s+/g, " ").slice(0, 280)}`,
     )
     .join("\n");
 
-  const r = await askJson<{ picks: { id: string; why: string }[] }>({
+  const r = await askJson<{ picks: { id: string; why: string }[]; rejected?: string[] }>({
     system: "You are the commissioning editor of a high-quality email newsletter.",
     prompt: `Topic: ${s.topic}
 Audience: ${s.audience}
-Pick the ${want + 4} best articles from the candidates below, best first.
+Readers are in: ${region.name === "Anywhere" ? "no particular country" : region.name}
+Pick up to ${want + 4} of the best articles from the candidates below, best first. Pick fewer if fewer are good enough.
+
+First, reject (list in "rejected", never in "picks") anything about the wrong place: if the topic names a place, an article about a different place with the same name is wrong (for UK readers, "Bristol" means Bristol, England, so Bristol, Connecticut or Bristol, Tennessee are rejected). Use the title, the source and its domain, and the snippet to decide.
 
 What "best" means, in order of importance:
 1. Clearly about the topic and useful to this audience.
 2. Substance and insight: original reporting, analysis, data, expert interviews, features. Prefer these over short rewrites of a press release or breaking-news stubs.
 3. Long reads: articles over ${LONG_READ_WORDS} words should be favoured when they are good.
 4. Variety: no two articles about the same story, and at most 2 from any one publication.
-Skip listicles, adverts, sponsored posts, job ads, event listings and pages that look paywalled or empty.
+Skip listicles, adverts, sponsored posts, job ads, event listings and pages that look paywalled or empty.${
+      domains.length ? `\nThe editor's favourite sources are ${domains.join(", ")}: prefer them when quality is otherwise equal.` : ""
+    }
 
 Candidates:
 ${list}`,
-    shape: `{"picks": [{"id": "3", "why": "one short phrase on why it earns its place"}]}`,
+    shape: `{"picks": [{"id": "3", "why": "one short phrase on why it earns its place"}], "rejected": ["7", "12"]}`,
     purpose: "rank",
     maxTokens: 1500,
   });
   const byId = new Map(cands.map((c) => [c.id, c]));
-  const picked = (r.picks ?? []).filter((p) => byId.has(String(p.id)));
-  // If the model returned too few, top up by length × relevance.
+  const rejected = new Set((r.rejected ?? []).map(String));
+  const picked = (r.picks ?? []).filter((p) => byId.has(String(p.id)) && !rejected.has(String(p.id)));
+  // Top up from the rest (by length × relevance) only if the model returned too few picks,
+  // and never with anything it rejected.
   const used = new Set(picked.map((p) => String(p.id)));
   const rest = cands
-    .filter((c) => !used.has(c.id))
+    .filter((c) => !used.has(c.id) && !rejected.has(c.id))
     .sort((a, b) => b.score * Math.log(10 + b.words) - a.score * Math.log(10 + a.words));
   return [
     ...picked.map((p) => ({ c: byId.get(String(p.id))!, why: p.why })),

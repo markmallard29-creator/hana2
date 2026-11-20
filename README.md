@@ -84,6 +84,13 @@ Set `TAVILY_API_KEY`, `EXA_API_KEY`, or both. With both, step 1 has a **Research
 
 /setup shows which search engine is active.
 
+## Local editions: region and favourite sources
+
+Step 1 has **Readers' region** (default United Kingdom) and **Favourite sources**.
+- **Region:** sets Tavily's `country` (with a region set, all Tavily searches run as "general", since that's where the country setting applies) and Exa's `userLocation`. It also tells Claude where the readers are, so it writes unambiguous searches ("Bristol England", not "Bristol") and rejects same-named places abroad (Bristol, Connecticut) when picking articles. Rejected articles are never added back, even if that leaves fewer than you asked for.
+- **Favourite sources:** one domain per line, e.g. bristolpost.co.uk. Tavily prefers them (`include_domains_mode: prefer`) without limiting the search to them. For Exa, HANA adds one extra search limited to those sites. The ranker is told to favour them when quality is otherwise equal.
+- If Tavily ever rejects these options, HANA retries the search without them rather than failing.
+
 ## Claude or OpenAI
 
 Set either `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. If both are set, Claude is used unless `LLM_PROVIDER=openai`. Default models:

@@ -20,7 +20,18 @@ export interface SearchHit {
 }
 
 export interface SearchProvider {
-  search(q: { query: string; startDate: string; endDate: string; news: boolean; max: number }): Promise<SearchHit[]>;
+  search(q: {
+    query: string;
+    startDate: string;
+    endDate: string;
+    news: boolean;
+    max: number;
+    /** Tavily country name ("united kingdom") and ISO code ("GB") for the readers' region. */
+    region?: { tavily: string | null; iso: string | null } | null;
+    /** Favourite sources: Tavily prefers them; Exa restricts to them (used for one extra query). */
+    domains?: string[];
+    onlyDomains?: boolean;
+  }): Promise<SearchHit[]>;
   extract(urls: string[]): Promise<Record<string, string>>;
 }
 
@@ -65,10 +76,13 @@ async function tavily(path: string, body: Record<string, unknown>) {
 }
 
 export const tavilyProvider: SearchProvider = {
-  async search({ query, startDate, endDate, news, max }) {
-    const data = await tavily("/search", {
+  async search({ query, startDate, endDate, news, max, region, domains }) {
+    // Tavily's country boost only works for general searches, so with a region set every
+    // query runs as "general"; the date window still keeps results recent.
+    const country = region?.tavily ?? null;
+    const base = {
       query,
-      topic: news ? "news" : "general",
+      topic: country ? "general" : news ? "news" : "general",
       search_depth: "advanced",
       max_results: Math.min(20, max),
       start_date: startDate,
@@ -77,7 +91,21 @@ export const tavilyProvider: SearchProvider = {
       include_raw_content: "text",
       exclude_domains: EXCLUDE_DOMAINS,
       include_usage: true,
-    });
+    };
+    const targeted = {
+      ...base,
+      ...(country ? { country } : {}),
+      ...(domains?.length ? { include_domains: domains.slice(0, 300), include_domains_mode: "prefer" } : {}),
+    };
+    let data;
+    try {
+      data = await tavily("/search", targeted);
+    } catch (e) {
+      // If Tavily rejects the targeting options, still search rather than fail the edition.
+      if (targeted === base || !/ 4\d\d:/.test((e as Error).message)) throw e;
+      console.warn("[tavily] targeting rejected, retrying without:", (e as Error).message);
+      data = await tavily("/search", base);
+    }
     return (data.results ?? []).map(
       (r: { url: string; title: string; content: string; raw_content?: string; published_date?: string; score?: number }) => ({
         url: r.url,
@@ -121,7 +149,7 @@ async function exa(path: string, body: Record<string, unknown>) {
 
 /** Exa: meaning-based search, good at finding features, analysis and long reads. */
 export const exaProvider: SearchProvider = {
-  async search({ query, startDate, endDate, news, max }) {
+  async search({ query, startDate, endDate, news, max, region, domains, onlyDomains }) {
     const data = await exa("/search", {
       query,
       type: "auto",
@@ -129,7 +157,8 @@ export const exaProvider: SearchProvider = {
       startPublishedDate: `${startDate}T00:00:00Z`,
       endPublishedDate: `${endDate}T23:59:59Z`,
       ...(news ? { category: "news" } : {}),
-      excludeDomains: EXCLUDE_DOMAINS,
+      ...(region?.iso ? { userLocation: region.iso } : {}),
+      ...(onlyDomains && domains?.length ? { includeDomains: domains } : { excludeDomains: EXCLUDE_DOMAINS }),
       contents: { text: { maxCharacters: 40000 } },
     });
     const results = (data.results ?? []) as {
