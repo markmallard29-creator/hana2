@@ -40,6 +40,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </div>
         </header>
+        <div className="border-b border-gray-100 bg-brand-light/40">
+          <p className="mx-auto max-w-[1250px] px-6 py-3 text-[15px] leading-relaxed text-gray-700">
+            <strong className="font-semibold text-gray-900">Celebrating quality journalism.</strong> We believe that quality,
+            human-written, long-form journalism should be read, shared and celebrated in its original form. In the age of AI
+            answers and articles, we prefer to signpost the original artefact and reward authors with clear attribution and human
+            attention. Hana was built to promote that mission.
+          </p>
+        </div>
         {(demoResearch || demoSend) && (
           <div className="bg-amber-50 text-center text-sm text-amber-900">
             <div className="mx-auto max-w-[1250px] px-6 py-2">
