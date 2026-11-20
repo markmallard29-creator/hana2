@@ -49,8 +49,16 @@ export function NewsletterTable({ rows }: { rows: NewsletterRow[] }) {
           {rows.map((n) => (
             <tr key={n.id} className={cx("hover:bg-gray-50", busy === n.id && "opacity-50")}>
               <td className="px-5 py-4">
-                <div className="font-medium">{n.title || <span className="text-gray-400">Untitled</span>}</div>
-                <div className="text-sm text-gray-500">{n.topic}</div>
+                {n.status === "draft" ? (
+                  <a href={`/new?id=${n.id}`} className="font-medium hover:text-brand hover:underline">
+                    {n.title || n.topic || "Untitled"}
+                  </a>
+                ) : (
+                  <div className="font-medium">{n.title || n.topic}</div>
+                )}
+                <div className="text-sm text-gray-500">
+                  {n.title ? n.topic : n.status === "draft" ? (n.article_count ? `${n.article_count} articles, not titled yet` : "No articles yet") : ""}
+                </div>
               </td>
               <td className="px-5 py-4">
                 <span
@@ -59,7 +67,11 @@ export function NewsletterTable({ rows }: { rows: NewsletterRow[] }) {
                     n.status === "sent" ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-600",
                   )}
                 >
-                  {n.status === "sent" ? `Sent to ${n.recipients ?? 0}` : n.status === "draft" ? "Draft" : "Sending"}
+                  {n.status === "sent"
+                    ? `Sent to ${n.recipients ?? 0}`
+                    : n.status === "draft"
+                      ? `Draft${n.step && n.article_count ? ` · step ${n.step} of 5` : ""}`
+                      : "Sending"}
                 </span>
               </td>
               <td className="hidden px-5 py-4 text-gray-600 md:table-cell">{n.list_name ?? "-"}</td>

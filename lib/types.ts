@@ -93,6 +93,8 @@ export interface Draft {
   themeId: string;
   editionLabel: string;
   listId: string | null;
+  /** Wizard step the editor was on when last saved (1-5), so "Continue editing" resumes there. */
+  step?: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

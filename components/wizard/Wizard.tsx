@@ -39,8 +39,12 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
     const engine = d.settings.search && search?.available[d.settings.search] ? d.settings.search : search?.default;
     return { ...d, settings: { ...d.settings, search: engine } };
   });
-  const [step, setStep] = useState(1);
+  // Reopen a draft on the step it was left on (needs articles to be past step 1; step 6 is "sent").
+  const [step, setStep] = useState(() => (initial?.articles.length ? Math.min(Math.max(initial.step ?? 2, 1), 5) : 1));
   const [maxReached, setMaxReached] = useState(initial?.articles.length ? 5 : 1);
+  const [saveState, setSaveState] = useState<SaveState>(initial ? "saved" : "idle");
+  const stepRef = useRef(step);
+  stepRef.current = step;
   const [phase, setPhase] = useState<string | null>(null); // progress label on step 2
   const [error, setError] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState<number | null>(null);
@@ -63,20 +67,110 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
     [setArticles],
   );
 
-  // ---- Persistence: save on step change, keep the id in the URL so refresh resumes ----
-  const save = useCallback(async () => {
-    const d = draftRef.current;
-    if (!d.settings.topic.trim()) return;
-    try {
-      const { id } = await api<{ id: string }>("/api/newsletters", d);
-      if (!d.id) setDraft((x) => ({ ...x, id }));
-      if (!new URLSearchParams(window.location.search).get("id")) {
-        window.history.replaceState(null, "", `/new?id=${id}`);
-      }
-    } catch {
-      /* autosave is best-effort */
+  // ---- Persistence: autosave shortly after every change, one save at a time, so the
+  // newest version always wins. The id goes in the URL so a refresh resumes the draft.
+  const saving = useRef<Promise<void> | null>(null);
+  const saveAgain = useRef(false);
+  const save = useCallback(async (): Promise<void> => {
+    if (stepRef.current === 6) return; // already sent
+    if (saving.current) {
+      saveAgain.current = true;
+      return saving.current;
     }
+    const run = async () => {
+      do {
+        saveAgain.current = false;
+        dirty.current = false;
+        const d = draftRef.current;
+        if (!d.settings.topic.trim()) return;
+        setSaveState("saving");
+        try {
+          const { id } = await api<{ id: string }>("/api/newsletters", { ...d, step: stepRef.current });
+          if (!d.id) setDraft((x) => ({ ...x, id }));
+          if (!new URLSearchParams(window.location.search).get("id")) {
+            window.history.replaceState(null, "", `/new?id=${id}`);
+          }
+          if (!dirty.current) setSaveState("saved");
+        } catch {
+          dirty.current = true;
+          setSaveState("error");
+        }
+      } while (saveAgain.current);
+    };
+    saving.current = run().finally(() => {
+      saving.current = null;
+    });
+    return saving.current;
   }, []);
+
+  // Autosave: the first change schedules a save ~1s later; further changes in the meantime
+  // ride along (save() always sends the latest draft). Unlike a reset-on-every-change timer,
+  // this still saves while summaries are streaming in.
+  const firstRender = useRef(true);
+  const dirty = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (step === 6) return;
+    // On step 1 only save drafts that already have articles; a new topic is saved when you press Next.
+    if (step === 1 && !draftRef.current.articles.length) return;
+    dirty.current = true;
+    setSaveState((s) => (s === "saving" ? s : "pending"));
+    if (!timer.current) {
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        void save();
+      }, 1000);
+    }
+  }, [draft, step, save]);
+
+  // Leaving the wizard (dashboard link, closing the tab): save straight away.
+  useEffect(() => {
+    const flush = () => {
+      if (!dirty.current) return;
+      const body = JSON.stringify({ ...draftRef.current, step: stepRef.current });
+      // keepalive lets the request finish after the page has gone (bodies up to ~64 KB)
+      if (body.length < 60_000) {
+        void fetch("/api/newsletters", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true });
+        dirty.current = false;
+      }
+    };
+    // In-app links (Dashboard, Email lists…): finish saving first, then navigate, so the
+    // next page never shows an older copy of this draft.
+    const onClick = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement).closest("a");
+      const href = link?.getAttribute("href");
+      if (!link || !href?.startsWith("/") || link.target === "_blank" || e.metaKey || e.ctrlKey) return;
+      if (!dirty.current && !saving.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      void save().finally(() => {
+        window.location.href = href;
+      });
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("click", onClick, true);
+      if (timer.current) clearTimeout(timer.current);
+      if (dirty.current) void save(); // in-app navigation: the page stays alive, so a normal save completes
+    };
+  }, [save]);
+
+  // Retry a failed save after a few seconds.
+  useEffect(() => {
+    if (saveState !== "error") return;
+    const t = setTimeout(() => void save(), 5000);
+    return () => clearTimeout(t);
+  }, [saveState, save]);
 
   // ---- Summaries: whenever there are pending articles, run up to N at a time.
   // Each card updates as soon as its summary lands; editing other cards is never blocked.
@@ -179,13 +273,14 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
     [save, runResearch],
   );
 
+  // Warn before leaving only if something hasn't been saved yet.
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
-      if (step > 1 && step < 6) e.preventDefault();
+      if (step < 6 && (saveState === "saving" || saveState === "pending" || saveState === "error")) e.preventDefault();
     };
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
-  }, [step]);
+  }, [step, saveState]);
 
   const a = draft.articles;
   const busy = phase !== null || a.some((x) => x.status === "pending" || x.status === "summarising");
@@ -209,11 +304,16 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
         <Stepper step={step} maxReached={maxReached} onJump={go} />
       </div>
       <div className="mx-auto mt-12 max-w-[1150px] px-6">
-        {draft.id && step > 1 && (
-          <CostMeter
-            editionId={draft.id}
-            refreshKey={`${step}|${phase ?? ""}|${a.filter((x) => x.status === "ready").length}|${a.length}|${draft.title}|${draft.intro.length}|${draft.subject}`}
-          />
+        {step < 6 && (
+          <div className="mb-4 flex min-h-[30px] items-center justify-end gap-3">
+            <SaveStatus state={saveState} />
+            {draft.id && step > 1 && (
+              <CostMeter
+                editionId={draft.id}
+                refreshKey={`${step}|${phase ?? ""}|${a.filter((x) => x.status === "ready").length}|${a.length}|${draft.title}|${draft.intro.length}|${draft.subject}`}
+              />
+            )}
+          </div>
         )}
         {error && (
           <div className="mb-6">
@@ -270,5 +370,16 @@ export function Wizard({ initial, testEmail, search }: { initial: Draft | null; 
         <Footer onBack={step > 1 ? () => go(step - 1) : undefined} next={next} onNext={() => go(step + 1)} />
       )}
     </div>
+  );
+}
+
+type SaveState = "idle" | "pending" | "saving" | "saved" | "error";
+
+function SaveStatus({ state }: { state: SaveState }) {
+  if (state === "idle") return null;
+  return (
+    <span className={state === "error" ? "text-sm text-amber-700" : "text-sm text-gray-400"} aria-live="polite">
+      {state === "saving" || state === "pending" ? "Saving…" : state === "saved" ? "All changes saved" : "Couldn't save; retrying…"}
+    </span>
   );
 }

@@ -318,13 +318,17 @@ export interface NewsletterRow {
   updated_at: string;
   list_name: string | null;
   cost_usd: number | null;
+  step: number | null;
+  article_count: number;
 }
 
 export async function listNewsletters(): Promise<NewsletterRow[]> {
   const c = await db();
   const r = await c.execute(`
     SELECT n.id, n.status, n.topic, n.title, n.subject, n.recipients, n.sent_at, n.updated_at, l.name AS list_name,
-      (SELECT SUM(cost_usd) FROM usage_events u WHERE u.edition_id = n.id) AS cost_usd
+      (SELECT SUM(cost_usd) FROM usage_events u WHERE u.edition_id = n.id) AS cost_usd,
+      json_extract(n.data, '$.step') AS step,
+      json_array_length(n.data, '$.articles') AS article_count
     FROM newsletters n LEFT JOIN lists l ON l.id = n.list_id
     ORDER BY COALESCE(n.sent_at, n.updated_at) DESC LIMIT 200`);
   return r.rows.map((x) => ({
@@ -338,12 +342,17 @@ export async function listNewsletters(): Promise<NewsletterRow[]> {
     updated_at: String(x.updated_at),
     list_name: x.list_name == null ? null : String(x.list_name),
     cost_usd: x.cost_usd == null ? null : Number(x.cost_usd),
+    step: x.step == null ? null : Number(x.step),
+    article_count: Number(x.article_count ?? 0),
   }));
 }
 
-/** Drafts are stored without article full text (it is only needed while summarising). */
+/**
+ * Full article text is only needed until an article is summarised, so it's dropped
+ * from ready articles but kept for the rest, letting a reopened draft carry on summarising.
+ */
 function slim(d: Draft): Draft {
-  return { ...d, articles: d.articles.map(({ content: _c, ...a }) => a) };
+  return { ...d, articles: d.articles.map(({ content, ...a }) => (a.status === "ready" ? a : { ...a, content })) };
 }
 
 export async function saveDraft(d: Draft): Promise<string> {

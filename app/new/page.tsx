@@ -13,11 +13,14 @@ export default async function NewNewsletter({ searchParams }: { searchParams: Pr
     const n = await getNewsletter(id);
     if (!n) notFound();
     if (n.status !== "draft") redirect(`/view/${id}`);
-    // Anything mid-summary when it was saved has lost its text; mark it for retry.
+    // Articles that weren't summarised yet carry on where they left off. Older drafts
+    // saved without the article text get a Retry button instead (it re-reads the page).
     initial = {
       ...n.draft,
       id: n.id,
-      articles: n.draft.articles.map((a) => (a.status === "ready" ? a : { ...a, status: "error" as const })),
+      articles: n.draft.articles.map((a) =>
+        a.status === "ready" ? a : { ...a, status: a.content ? ("pending" as const) : ("error" as const) },
+      ),
     };
   }
   return <Wizard key={id ?? "new"} initial={initial} testEmail={config.testEmail} search={searchOptions()} />;

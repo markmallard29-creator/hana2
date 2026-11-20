@@ -27,7 +27,7 @@ export function CostMeter({ editionId, refreshKey }: { editionId: string; refres
   const unknown = r.lines.filter((l) => l.provider !== "resend").reduce((a, l) => a + l.unpriced, 0);
 
   return (
-    <div className="mb-4 flex justify-end">
+    <div>
       <div className="relative">
         <button
           onClick={() => setOpen((v) => !v)}
